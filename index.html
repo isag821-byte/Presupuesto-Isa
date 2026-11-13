@@ -5,199 +5,279 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Modelo Presupuesto Isa</title>
 
-  <!-- =========================================================
-       DEPENDENCIAS (CDN)
-       - Tailwind CSS (Play CDN): estilos utilitarios sin build.
-       - html2pdf.js: exportación del Sumario a PDF.
-       ========================================================= -->
+  <!-- =====================================================================
+       DEPENDENCIAS VÍA CDN
+       - Tailwind CSS (Play CDN) con color de acento #572364
+       - html2pdf.js  → exportación del Sumario a PDF
+       - pdf.js       → extracción de texto de PDFs para la importación
+       ===================================================================== -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { colors: { accent: { DEFAULT: '#572364', dark: '#3e1848', soft: '#f2ecf4' } } } }
+    };
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
-  <!-- Componentes reutilizables con @apply (soportado por el Play CDN) -->
+  <!-- Componentes de estilo (escala de grises + acento morado) -->
   <style type="text/tailwindcss">
     @layer components {
-      .card      { @apply bg-white rounded-xl border border-slate-200 shadow-sm; }
-      .inp       { @apply w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500; }
-      .btn       { @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition active:scale-[.98]; }
-      .btn-pri   { @apply btn bg-indigo-600 text-white hover:bg-indigo-500; }
-      .btn-sec   { @apply btn bg-white/10 text-white hover:bg-white/20; }
-      .btn-light { @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200; }
-      .tab-btn   { @apply whitespace-nowrap px-4 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-white hover:text-slate-900; }
-      .tab-on    { @apply bg-white text-indigo-700 shadow-sm; }
-      .th        { @apply text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-2 px-1; }
-      .panel-sum { @apply flex items-center justify-between cursor-pointer select-none px-4 py-3 font-semibold text-slate-800; }
+      .card       { @apply bg-white rounded-xl border border-neutral-200 shadow-sm; }
+      .inp        { @apply w-full rounded-md border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent; }
+      .btn        { @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition active:scale-[.98] disabled:opacity-50; }
+      .btn-accent { @apply btn bg-accent text-white hover:bg-accent-dark; }
+      .btn-ghost  { @apply btn bg-white border border-neutral-300 text-neutral-800 hover:bg-neutral-100; }
+      .btn-dark   { @apply btn bg-neutral-900 text-white hover:bg-neutral-700; }
+      .btn-danger { @apply btn border border-red-600 text-red-600 bg-white hover:bg-red-50; }
+      .btn-danger-solid { @apply btn bg-red-600 text-white hover:bg-red-700; }
+      .tab-btn    { @apply whitespace-nowrap px-4 py-2 text-sm font-medium rounded-lg text-neutral-600 hover:bg-white hover:text-neutral-900; }
+      .tab-on     { @apply bg-accent text-white hover:bg-accent hover:text-white shadow-sm; }
+      .th         { @apply text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 py-2 px-2; }
+      .sum-panel  { @apply flex items-center justify-between cursor-pointer select-none px-4 py-3 font-semibold text-neutral-900; }
+      .badge      { @apply inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold; }
     }
   </style>
   <style>
-    /* Quita flechas de los inputs numéricos para una vista más limpia */
-    input[type=number]::-webkit-inner-spin-button { opacity: .4; }
     details > summary::-webkit-details-marker { display: none; }
     details[open] .chev { transform: rotate(180deg); }
     .scroll-thin::-webkit-scrollbar { height: 6px; width: 6px; }
-    .scroll-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    .scroll-thin::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 9999px; }
+    input[type=number] { -moz-appearance: textfield; }
     @media print { .no-print { display: none !important; } }
   </style>
 </head>
 
-<body class="bg-slate-100 text-slate-800 min-h-screen">
+<body class="bg-neutral-100 text-neutral-900 min-h-screen">
 
-<!-- =========================================================
-     CABECERA + BARRA DE TOTALES
-     ========================================================= -->
-<div class="lg:sticky lg:top-0 z-30 no-print">
-  <header class="bg-slate-900 text-white">
-    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
-      <div class="flex items-center gap-3">
-        <div class="h-10 w-10 rounded-xl bg-indigo-500 grid place-items-center font-black tracking-tight">MI</div>
-        <div>
-          <h1 class="text-lg font-bold leading-tight">Modelo Presupuesto Isa</h1>
-          <p class="text-xs text-slate-400">Cotizador y gestor de presupuestos audiovisuales</p>
-        </div>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <!-- Selector multimoneda global -->
-        <div id="currencySwitch" class="inline-flex rounded-lg bg-slate-800 p-1"></div>
-        <button class="btn-sec" data-action="history">Historial</button>
-        <button class="btn-sec" data-action="save">Guardar</button>
-        <button class="btn-sec" data-action="new">Nuevo</button>
-        <button class="btn-pri" data-action="export">Exportar PDF</button>
+<!-- =====================================================================
+     CABECERA
+     ===================================================================== -->
+<header class="bg-neutral-950 text-white no-print">
+  <div class="px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center gap-3">
+      <button class="lg:hidden btn !px-2.5 bg-white/10 hover:bg-white/20" data-action="sidebar-open" title="Historial">☰</button>
+      <div class="h-10 w-10 rounded-xl bg-accent grid place-items-center font-black">MI</div>
+      <div>
+        <h1 class="text-base sm:text-lg font-bold leading-tight">Modelo Presupuesto Isa</h1>
+        <p class="text-[11px] text-neutral-400">Cotizador · producción audiovisual</p>
       </div>
     </div>
-  </header>
-  <section id="totalsBar" class="bg-white border-b border-slate-200"></section>
-</div>
+    <div class="flex flex-wrap items-center gap-2">
+      <div id="currencySwitch" class="inline-flex rounded-lg bg-neutral-800 p-1"></div>
+      <button class="btn-accent" data-action="save">Guardar</button>
+      <button class="btn-accent" data-action="export">Exportar PDF</button>
+      <button class="btn border border-red-500 text-red-400 hover:bg-red-500/10" data-action="discard">Descartar</button>
+    </div>
+  </div>
+</header>
 
-<!-- =========================================================
-     CUERPO PRINCIPAL
-     Columna izquierda: configuración | Columna derecha: pestañas
-     ========================================================= -->
-<main class="max-w-7xl mx-auto px-3 sm:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
-
-  <!-- ---------- Panel lateral de configuración ---------- -->
-  <aside class="lg:col-span-4 xl:col-span-3 space-y-3 no-print">
-    <details class="card cfg-panel" data-open-desktop>
-      <summary class="panel-sum">Datos del proyecto <span class="chev transition">▾</span></summary>
-      <div id="metaPanel" class="px-4 pb-4"></div>
-    </details>
-
-    <details class="card cfg-panel" data-open-desktop>
-      <summary class="panel-sum">Variables globales <span class="chev transition">▾</span></summary>
-      <div id="varsPanel" class="px-4 pb-4"></div>
-    </details>
-
-    <details class="card cfg-panel">
-      <summary class="panel-sum">Tasas de cambio <span class="chev transition">▾</span></summary>
-      <div id="ratesPanel" class="px-4 pb-4"></div>
-    </details>
-
-    <details class="card cfg-panel">
-      <summary class="panel-sum">Importar requerimientos <span class="chev transition">▾</span></summary>
-      <div class="px-4 pb-4 space-y-2">
-        <p class="text-xs text-slate-500 leading-relaxed">
-          Pega una lista (una línea por ítem). Ejemplos:<br>
-          <code class="text-[11px]">PRODUCCIÓN:</code> (encabezado de categoría)<br>
-          <code class="text-[11px]">Paquete de cámara 2 días x $650</code><br>
-          <code class="text-[11px]">Post: Edición 4 días x 120</code><br>
-          <code class="text-[11px]">Catering 25 pax x 2 días x 8</code><br>
-          <code class="text-[11px]">Director - 1.500</code>
-        </p>
-        <textarea id="importText" rows="6" class="inp font-mono text-xs" placeholder="Pega aquí los requerimientos..."></textarea>
-        <button class="btn-light w-full" data-action="parse">Analizar texto</button>
-        <div id="importPreview"></div>
+<div class="lg:flex">
+  <!-- =====================================================================
+       BARRA LATERAL: HISTORIAL (drawer en móvil, fija en escritorio)
+       ===================================================================== -->
+  <div id="sidebarOverlay" class="no-print fixed inset-0 bg-black/50 z-40 hidden lg:hidden" data-action="sidebar-close"></div>
+  <aside id="sidebar" class="no-print fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] bg-white border-r border-neutral-200 -translate-x-full transition-transform duration-300
+                             lg:translate-x-0 lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:w-72 xl:w-80 lg:shrink-0 flex flex-col">
+    <div class="px-4 py-3 border-b border-neutral-200 flex items-center justify-between">
+      <div>
+        <h2 class="font-bold">Historial</h2>
+        <p id="histCount" class="text-xs text-neutral-500"></p>
       </div>
-    </details>
+      <button class="lg:hidden btn-ghost !px-2 !py-1" data-action="sidebar-close">✕</button>
+    </div>
+    <div class="p-3 space-y-2 border-b border-neutral-200">
+      <div class="grid grid-cols-2 gap-2">
+        <button class="btn-accent" data-action="save">Guardar actual</button>
+        <button class="btn-ghost" data-action="new">Nuevo</button>
+      </div>
+      <input id="histFilter" class="inp" placeholder="Filtrar: cliente, proyecto, cotización…" />
+    </div>
+    <div id="histList" class="flex-1 overflow-y-auto scroll-thin p-3 space-y-2"></div>
   </aside>
 
-  <!-- ---------- Contenido con pestañas ---------- -->
-  <section class="lg:col-span-8 xl:col-span-9 min-w-0">
-    <nav id="tabs" class="no-print flex gap-1 overflow-x-auto scroll-thin bg-slate-200/70 p-1 rounded-xl mb-4"></nav>
-    <div id="tabContent"></div>
-  </section>
-</main>
+  <!-- =====================================================================
+       PANEL CENTRAL: PRESUPUESTO ACTIVO
+       ===================================================================== -->
+  <main class="flex-1 min-w-0">
+    <div id="totalsBar" class="sticky top-0 z-20 bg-white/95 backdrop-blur border-b border-neutral-200 no-print"></div>
 
-<!-- =========================================================
-     HISTORIAL (drawer lateral)
-     ========================================================= -->
-<div id="drawerOverlay" class="fixed inset-0 bg-black/40 z-40 hidden no-print" data-action="close-history"></div>
-<aside id="historyDrawer" class="no-print fixed top-0 right-0 h-full w-full sm:w-[440px] bg-white z-50 shadow-2xl translate-x-full transition-transform duration-300 flex flex-col">
-  <div class="flex items-center justify-between px-4 py-3 border-b">
-    <div>
-      <h2 class="font-bold">Historial de presupuestos</h2>
-      <p id="histCount" class="text-xs text-slate-500"></p>
+    <div class="p-3 sm:p-5 space-y-4 max-w-[1400px] mx-auto">
+      <!-- Metadatos -->
+      <section id="metaCard" class="card p-4 no-print"></section>
+
+      <!-- Configuración: variables, tasas, importación -->
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 items-start no-print">
+        <details class="card" open>
+          <summary class="sum-panel">Variables globales <span class="chev transition text-neutral-400">▾</span></summary>
+          <div id="varsPanel" class="px-4 pb-4"></div>
+        </details>
+        <details class="card">
+          <summary class="sum-panel">Tasas del proyecto <span class="chev transition text-neutral-400">▾</span></summary>
+          <div id="ratesPanel" class="px-4 pb-4"></div>
+        </details>
+        <details class="card">
+          <summary class="sum-panel">Importación inteligente <span class="chev transition text-neutral-400">▾</span></summary>
+          <div class="px-4 pb-4 space-y-2">
+            <p class="text-xs text-neutral-500">Pega un brief, una cotización o mensajes de WhatsApp, o sube un PDF. La información se asigna solo a los renglones que ya existen en el presupuesto.</p>
+            <textarea id="importText" rows="6" class="inp font-mono text-xs" placeholder="Ej: Hola Isa! Para el comercial necesitamos fotógrafo 2 días, maquillaje, catering para 20 personas, edición y color…"></textarea>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="btn-ghost cursor-pointer">
+                Subir PDF
+                <input id="pdfInput" type="file" accept="application/pdf" class="hidden" />
+              </label>
+              <button id="importBtn" class="btn-accent" data-action="import-run">Procesar</button>
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-neutral-500">
+              <span id="importMode"></span>
+              <button class="underline hover:text-accent" data-action="ai-settings">Configurar IA</button>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Pestañas -->
+      <nav id="tabs" class="no-print flex gap-1 overflow-x-auto scroll-thin bg-neutral-200/80 p-1 rounded-xl"></nav>
+      <div id="tabContent"></div>
     </div>
-    <button class="btn-light" data-action="close-history">Cerrar</button>
-  </div>
-  <div class="p-3 border-b">
-    <input id="histFilter" class="inp" placeholder="Filtrar por cliente, proyecto, agencia o versión..." />
-  </div>
-  <div id="histList" class="flex-1 overflow-y-auto scroll-thin p-3 space-y-2"></div>
-</aside>
+  </main>
+</div>
 
-<!-- =========================================================
-     CHATBOT ASISTENTE
-     ========================================================= -->
-<button id="chatFab" data-action="chat-toggle" class="no-print fixed bottom-4 right-4 z-40 h-14 w-14 rounded-full bg-indigo-600 text-white shadow-xl hover:bg-indigo-500 grid place-items-center" title="Asistente">
+<!-- =====================================================================
+     CHATBOT (widget flotante)
+     ===================================================================== -->
+<button id="chatFab" data-action="chat-toggle" title="Asistente"
+  class="no-print fixed bottom-4 right-4 z-40 h-14 w-14 rounded-full bg-accent text-white shadow-xl hover:bg-accent-dark grid place-items-center">
   <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.84L3 20l1.4-3.72A7.64 7.64 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
 </button>
 
-<div id="chatPanel" class="no-print hidden fixed z-40 bottom-20 right-4 left-4 sm:left-auto sm:w-96 h-[70vh] max-h-[620px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
-  <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+<div id="chatPanel" class="no-print hidden fixed z-40 bottom-20 right-4 left-4 sm:left-auto sm:w-[400px] h-[72vh] max-h-[640px] bg-white rounded-2xl shadow-2xl border border-neutral-200 flex flex-col overflow-hidden">
+  <div class="bg-neutral-950 text-white px-4 py-3 flex items-center justify-between">
     <div>
       <div class="font-semibold">Asistente Isa</div>
-      <div id="chatMode" class="text-[11px] text-slate-400"></div>
+      <div id="chatMode" class="text-[11px] text-neutral-400"></div>
     </div>
     <div class="flex gap-1">
-      <button class="btn-sec !px-2 !py-1 text-xs" data-action="chat-settings">API</button>
-      <button class="btn-sec !px-2 !py-1 text-xs" data-action="chat-toggle">✕</button>
+      <button class="btn !px-2 !py-1 text-xs bg-white/10 hover:bg-white/20" data-action="ai-settings">IA</button>
+      <button class="btn !px-2 !py-1 text-xs bg-white/10 hover:bg-white/20" data-action="chat-toggle">✕</button>
     </div>
   </div>
-  <!-- Configuración opcional de OpenAI -->
-  <div id="chatSettings" class="hidden border-b bg-slate-50 p-3 space-y-2 text-xs">
-    <p class="text-slate-500">Opcional: con una API Key de OpenAI el asistente entiende lenguaje libre. Sin ella funciona con un intérprete local de comandos. La clave se guarda solo en este navegador.</p>
-    <input id="aiKey" type="password" class="inp" placeholder="sk-..." />
-    <input id="aiModel" class="inp" placeholder="Modelo (ej: gpt-4o-mini)" />
-    <div class="flex gap-2">
-      <button class="btn-light flex-1" data-action="ai-save">Guardar</button>
-      <button class="btn-light flex-1" data-action="ai-clear">Borrar clave</button>
-    </div>
-  </div>
-  <div id="chatMessages" class="flex-1 overflow-y-auto scroll-thin p-3 space-y-2 bg-slate-50"></div>
-  <div class="px-3 pt-2 flex gap-1 overflow-x-auto scroll-thin" id="chatChips"></div>
+  <div id="chatMessages" class="flex-1 overflow-y-auto scroll-thin p-3 space-y-2 bg-neutral-50"></div>
+  <div id="chatChips" class="px-3 pt-2 flex gap-1 overflow-x-auto scroll-thin"></div>
   <form id="chatForm" class="p-3 flex gap-2">
-    <input id="chatInput" class="inp" placeholder='Ej: "Añade $500 a Post Producción"' autocomplete="off" />
-    <button class="btn-pri" type="submit">Enviar</button>
+    <input id="chatInput" class="inp" placeholder='Ej: "Sube el markup a 20%"' autocomplete="off" />
+    <button class="btn-accent" type="submit">Enviar</button>
   </form>
 </div>
 
-<!-- Notificaciones -->
-<div id="toast" class="no-print fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] hidden rounded-lg bg-slate-900 text-white text-sm px-4 py-2 shadow-lg"></div>
+<!-- =====================================================================
+     MODAL GENÉRICO (descartar, confirmaciones, vista previa de importación, IA)
+     ===================================================================== -->
+<div id="modal" class="no-print fixed inset-0 z-[70] hidden items-center justify-center p-4 bg-black/60">
+  <div id="modalBox" class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+    <div class="px-5 pt-5"><h3 id="modalTitle" class="font-bold text-lg"></h3></div>
+    <div id="modalBody" class="px-5 py-3 overflow-y-auto scroll-thin text-sm text-neutral-700"></div>
+    <div class="px-5 pb-5 pt-2 flex justify-end gap-2 border-t border-neutral-100">
+      <button id="modalCancel" class="btn-ghost" data-action="modal-cancel">Cancelar</button>
+      <button id="modalConfirm" class="btn-accent" data-action="modal-confirm">Aceptar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="no-print fixed bottom-24 left-1/2 -translate-x-1/2 z-[80] hidden rounded-lg bg-neutral-900 text-white text-sm px-4 py-2 shadow-lg"></div>
 
 
 <script>
-/* =====================================================================
-   MODELO PRESUPUESTO ISA
-   Toda la lógica de la app: estado, cálculos, render, historial,
-   importación de texto, chatbot y exportación a PDF.
-   Convención: TODOS los montos se guardan internamente en USD.
-   La vista (y los inputs) se muestran en la moneda activa y se
-   convierten con la tasa activa de cada moneda.
-   ===================================================================== */
+/* =========================================================================
+   MODELO PRESUPUESTO ISA · Lógica de la aplicación (Vanilla JS)
+   -------------------------------------------------------------------------
+   Arquitectura:
+     1. JSON BASE ............ plantilla editable con todos los renglones estándar
+     2. Utilidades
+     3. Estado y modelos
+     4. Monedas y tasas
+     5. Motor de cálculo ..... netos → recargos → dilución
+     6. Componentes UI ....... funciones render*() que devuelven/insertan HTML
+     7. Ciclo de render
+     8. Historial (localStorage)
+     9. Modal y controles de sistema (descartar, nuevo)
+    10. Importación inteligente (texto / PDF / LLM)
+    11. Servicio LLM (OpenAI compatible, con espacio para la API Key)
+    12. Chatbot con Function Calling + ejecutor de acciones
+    13. Exportación PDF
+    14. Eventos
+    15. Arranque
+   Convención: todos los montos se guardan en USD NETOS. La vista los convierte
+   a la moneda activa con la tasa activa del proyecto.
+   ========================================================================= */
 
-/* ---------------------------------------------------------------
-   1. CONSTANTES Y UTILIDADES
-   --------------------------------------------------------------- */
-const APP_NAME   = 'Modelo Presupuesto Isa';
-const LS_DB      = 'mpi_db_v1';       // base de datos local (hasta 100 presupuestos)
-const LS_CURRENT = 'mpi_current_v1';  // borrador en curso (autoguardado)
-const LS_AI      = 'mpi_ai_v1';       // configuración opcional de OpenAI
+/* -------------------------------------------------------------------------
+   1. JSON BASE  (edítalo libremente: nombres, categorías y orden)
+   Cada renglón arranca en 0 → queda oculto en el Sumario hasta que tenga monto.
+   ------------------------------------------------------------------------- */
+const BASE_BUDGET = {
+  meta: { cliente: '', agencia: '', proyecto: '', cotizacion: '', fecha: '', version: 'V1', diasPauta: '' },
+  view: 'USD',
+  // Tasas: 1 USD = value (en la moneda indicada). Etiquetas editables.
+  rates: [
+    { id: 'bcv',      label: 'Tasa BCV',      cur: 'VES', value: 250 },
+    { id: 'promedio', label: 'Tasa Promedio', cur: 'VES', value: 300 },
+    { id: 'eur',      label: 'Tasa Euro',     cur: 'EUR', value: 0.86 },
+  ],
+  activeRate: { VES: 'bcv', EUR: 'eur' },
+  // Variables globales (recargos). Se DILUYEN en el Sumario.
+  vars: { markup: 15, honExtra: 10, agency: 10, extras: 0, tax: 16 },
+  showDetail: true, // mostrar renglones (con monto) dentro de cada categoría del Sumario/PDF
+  items: {
+    preprod: [
+      'Desarrollo de guion / tratamiento', 'Storyboard', 'Scouting de locaciones', 'Casting',
+      'Fitting / prueba de vestuario', 'Reunión de pre-producción (PPM)', 'Permisos y trámites',
+      'Pruebas de cámara y maquillaje', 'Oficina de producción', 'Transporte de pre-producción',
+    ],
+    prod: [
+      'Paquete de cámara', 'Lentes y accesorios', 'Monitoreo / video assist', 'Luces', 'Grip (equipo)',
+      'Planta eléctrica', 'Dolly / grúa / steadicam', 'Drone', 'Sonido directo (equipo)', 'Locación',
+      'Estudio / set', 'Construcción de escenografía', 'Arte y utilería', 'Vestuario',
+      'Maquillaje y peinado (materiales)', 'Talentos principales', 'Talentos secundarios / extras',
+      'Catering', 'Transporte de equipo y personal', 'Hospedaje y viáticos', 'Seguridad',
+      'Seguros', 'Almacenamiento (discos / tarjetas)', 'Imprevistos de producción',
+    ],
+    hon: [
+      'Director', 'Productor ejecutivo', 'Productor de campo', 'Jefe de producción', 'Asistente de producción',
+      'Asistente de dirección', 'Director de fotografía (DP)', 'Fotógrafo', 'Asistente de cámara / foquista',
+      'Gaffer', 'Eléctricos', 'Maquinistas (grip)', 'Director de arte', 'Utilero / ambientador',
+      'Vestuarista / estilista', 'Maquillador / peinador', 'Sonidista', 'DIT / data manager',
+      'Script / continuista', 'Making of / BTS', 'Choferes',
+    ],
+    post: [
+      'Edición / montaje', 'Corrección de color', 'Retoque fotográfico', 'Animación / motion graphics',
+      'VFX / composición', 'Música (licencia u original)', 'Diseño sonoro y mezcla', 'Locución',
+      'Subtitulado', 'Versiones y formatos (cutdowns)', 'Masterización y entrega', 'Respaldo final del material',
+    ],
+  },
+};
+
+// Valores de ejemplo SOLO para la primera vez que se abre la app (para ver la dilución en acción)
+const DEMO = {
+  meta: { cliente: 'Cliente Demo C.A.', agencia: 'Agencia Creativa', proyecto: 'Campaña Lanzamiento', cotizacion: 'COT-0001', version: 'V1', diasPauta: '2' },
+  values: { // nombre: [cantidad, días, unitario neto USD]
+    'Scouting de locaciones': [1, 2, 150], 'Casting': [1, 1, 400], 'Paquete de cámara': [1, 2, 650],
+    'Luces': [1, 2, 450], 'Locación': [1, 2, 400], 'Arte y utilería': [1, 1, 600], 'Catering': [25, 2, 8],
+    'Transporte de equipo y personal': [2, 2, 90], 'Director': [1, 1, 1500], 'Director de fotografía (DP)': [1, 2, 350],
+    'Fotógrafo': [1, 2, 400], 'Productor de campo': [1, 4, 120], 'Maquillador / peinador': [1, 2, 120],
+    'Edición / montaje': [1, 4, 120], 'Corrección de color': [1, 2, 150], 'Retoque fotográfico': [20, 1, 15],
+  },
+};
+
+/* -------------------------------------------------------------------------
+   2. UTILIDADES
+   ------------------------------------------------------------------------- */
+const APP_NAME = 'Modelo Presupuesto Isa';
+const LS_DB = 'mpi2_db', LS_CURRENT = 'mpi2_current', LS_AI = 'mpi2_ai';
 const MAX_BUDGETS = 100;
+const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
+const DEFAULT_MODEL = 'gpt-4o-mini';
 
-// Umbrales a partir de los cuales el chatbot pide confirmación
-const BIG_PCT_VALUE = 20;   // un porcentaje que queda en 20% o más
-const BIG_PCT_JUMP  = 10;   // o un salto de 10 puntos o más
-const BIG_AMOUNT_RATIO = 0.25; // un monto que supera el 25% del total
-
-// Categorías de costos y en qué pestaña viven
 const CATS = {
   preprod: { label: 'Pre-producción',  tab: 'prepro' },
   prod:    { label: 'Producción',      tab: 'prepro' },
@@ -205,222 +285,216 @@ const CATS = {
   post:    { label: 'Post-producción', tab: 'post'   },
 };
 const CAT_ORDER = ['preprod', 'prod', 'hon', 'post'];
-
 const TABS = [
-  { id: 'sumario',    label: 'Sumario' },
-  { id: 'prepro',     label: 'Pre & Pro' },
-  { id: 'hon',        label: 'Honorarios' },
-  { id: 'post',       label: 'Post Producción' },
-  { id: 'ejecutable', label: 'Ejecutable' },
+  { id: 'sumario', label: '1. Sumario' }, { id: 'prepro', label: '2. Pre & Pro' }, { id: 'hon', label: '3. Honorarios' },
+  { id: 'post', label: '4. Post Producción' }, { id: 'ejecutable', label: '5. Ejecutable' },
 ];
-
-// Variables globales que afectan el cierre
 const VAR_DEFS = {
-  markup:    { label: '% Markup general',          pct: true  },
-  markupHon: { label: '% Markup extra honorarios', pct: true  },
-  agency:    { label: '% Agencia',                 pct: true  },
-  tax:       { label: '% Impuestos',               pct: true  },
-  extras:    { label: 'Montos extras',             pct: false },
+  markup:   { label: '% Markup global',        pct: true },
+  honExtra: { label: '% Aumento honorarios',   pct: true },
+  agency:   { label: '% Agencia',              pct: true },
+  extras:   { label: 'Montos extras',          pct: false },
+  tax:      { label: '% Impuestos (IVA)',      pct: true },
 };
-
-const CUR = {
-  VES: { sym: 'Bs', label: 'Bolívares' },
-  USD: { sym: '$',  label: 'Dólares'   },
-  EUR: { sym: '€',  label: 'Euros'     },
-};
-
 const META_FIELDS = [
-  { k: 'cliente',  label: 'Cliente' },
-  { k: 'agencia',  label: 'Agencia' },
-  { k: 'proyecto', label: 'Proyecto', full: true },
-  { k: 'version',  label: 'Versión' },
-  { k: 'fecha',    label: 'Fecha', type: 'date' },
-  { k: 'derechos', label: 'Derechos', full: true, ph: 'Ej: 1 año, TV + digital, Venezuela' },
-  { k: 'duracion', label: 'Duración', ph: 'Ej: 30" + 15"' },
-  { k: 'dias',     label: 'N° de días', type: 'number' },
+  { k: 'cliente', label: 'Cliente' }, { k: 'agencia', label: 'Agencia' }, { k: 'proyecto', label: 'Proyecto' },
+  { k: 'cotizacion', label: 'Cotización' }, { k: 'fecha', label: 'Fecha', type: 'date' },
+  { k: 'version', label: 'Versión' }, { k: 'diasPauta', label: 'Días de pauta', type: 'number' },
 ];
+const CUR = { VES: { sym: 'Bs', label: 'Bolívares' }, USD: { sym: '$', label: 'Dólares' }, EUR: { sym: '€', label: 'Euros' } };
 
 const NF = new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const uid    = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
-const norm   = s => (s ?? '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-const esc    = s => (s ?? '').toString().replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+const norm = s => (s ?? '').toString().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+const esc = s => (s ?? '').toString().replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const round2 = n => Math.round((+n || 0) * 100) / 100;
-const num    = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
-const today  = () => new Date().toISOString().slice(0, 10);
-const $      = sel => document.querySelector(sel);
-const slug   = s => norm(s || 'presupuesto').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'presupuesto';
+const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+const today = () => new Date().toISOString().slice(0, 10);
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const slug = s => norm(s || 'presupuesto').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'presupuesto';
+const clone = o => JSON.parse(JSON.stringify(o));
+const EPS = 0.004;
 
-/** Convierte texto numérico en formato latino o anglosajón: "1.500,50" / "1,500.50" / "1500" */
+/** Convierte "1.500,50" / "1,500.50" / "1500" a número */
 function parseNum(str) {
   let s = (str ?? '').toString().replace(/[^\d.,-]/g, '');
   const c = s.lastIndexOf(','), d = s.lastIndexOf('.');
-  if (c > -1 && d > -1) {
-    s = c > d ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
-  } else if (c > -1) {
-    const parts = s.split(',');
-    s = (parts.length > 2 || parts[parts.length - 1].length === 3) ? s.replace(/,/g, '') : s.replace(',', '.');
-  } else if (d > -1) {
-    const parts = s.split('.');
-    if (parts.length > 2 || parts[parts.length - 1].length === 3) s = s.replace(/\./g, '');
-  }
+  if (c > -1 && d > -1) s = c > d ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  else if (c > -1) { const p = s.split(','); s = (p.length > 2 || p[p.length - 1].length === 3) ? s.replace(/,/g, '') : s.replace(',', '.'); }
+  else if (d > -1) { const p = s.split('.'); if (p.length > 2 || p[p.length - 1].length === 3) s = s.replace(/\./g, ''); }
   return parseFloat(s) || 0;
 }
 
-/* ---------------------------------------------------------------
-   2. ESTADO Y MODELOS DE DATOS
-   --------------------------------------------------------------- */
-let state;                 // presupuesto activo
-let activeTab = 'sumario'; // pestaña visible
-let importPreview = [];    // filas detectadas por el importador
-const chat = { pending: null, history: [] }; // estado del chatbot
+/* --- Coincidencia difusa de texto contra nombres de renglones (importación y chat) --- */
+const STOP = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'e', 'o', 'u', 'para', 'con', 'por', 'en', 'al', 'a', 'un', 'una', 'unos', 'unas', 'x', 'pax', 'dia', 'dias', 'jornada', 'jornadas', 'que', 'se', 'su', 'mi']);
+const SYN = { editor: 'edicion', montajista: 'montaje', colorista: 'color', maquillaje: 'maquillador', maquilladora: 'maquillador', peinado: 'peinador', camarografo: 'camara', productora: 'productor', fotografa: 'fotografo', fotos: 'fotografo', comida: 'catering', almuerzo: 'catering', modelos: 'talentos', modelo: 'talentos', actores: 'talentos', actriz: 'talentos', actor: 'talentos', musica: 'musica', dron: 'drone' };
+const tokens = s => norm(s).replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w.length >= 2 && !STOP.has(w)).map(w => SYN[w] || w);
+const tokEq = (a, b) => a === b || (a.length >= 5 && b.length >= 5 && a.slice(0, 5) === b.slice(0, 5));
+
+/** Devuelve el renglón cuyo nombre mejor coincide con el texto (o null) */
+function bestItemMatch(text, { min = 0.5, catHint = null, items = state.items } = {}) {
+  const tt = tokens(text);
+  let best = null, bestScore = 0;
+  for (const it of items) {
+    const it_t = tokens(it.name);
+    if (!it_t.length) continue;
+    const matched = it_t.filter(a => tt.some(b => tokEq(a, b))).length;
+    const ratio = matched / it_t.length;
+    if (ratio < min) continue;
+    const score = matched * ratio + (catHint && it.cat === catHint ? 0.05 : 0);
+    if (score > bestScore) { bestScore = score; best = it; }
+  }
+  return best;
+}
+
+/* -------------------------------------------------------------------------
+   3. ESTADO Y MODELOS
+   ------------------------------------------------------------------------- */
+let state;                      // presupuesto activo (JSON)
+let activeTab = 'sumario';
+const ui = { onlyUsed: false, execAll: false };   // preferencias de vista (no se guardan)
+const chat = { pending: null, history: [] };
 
 function newItem(cat, name = '', qty = 1, days = 1, unit = 0) {
-  return { id: uid(), cat, name, qty, days, unit, real: 0 }; // unit y real en USD
+  // real: lo realmente pagado → monto, moneda de pago y tasa de pago (id de tasa del proyecto o 'custom')
+  return { id: uid(), cat, name, qty, days, unit, real: { amount: 0, cur: 'USD', rateId: null, custom: 0 } };
 }
 
-/** Presupuesto vacío con valores por defecto */
-function blankBudget() {
-  return {
-    id: uid(),
-    meta: { cliente: '', agencia: '', proyecto: 'Nuevo proyecto', version: 'V1', derechos: '', fecha: today(), duracion: '', dias: 1 },
-    view: 'USD',
-    // Cada tasa expresa: 1 USD = value (en la moneda indicada). Etiquetas editables.
-    rates: [
-      { id: 'bcv',  label: 'Tasa BCV',      cur: 'VES', value: 250 },
-      { id: 'prom', label: 'Tasa Promedio', cur: 'VES', value: 300 },
-      { id: 'eur',  label: 'Tasa Euro',     cur: 'EUR', value: 0.86 },
-    ],
-    activeRate: { VES: 'bcv', EUR: 'eur' },
-    vars: { markup: 15, markupHon: 10, agency: 10, tax: 16, extras: 0 },
-    items: [],
-    savedAt: null,
-  };
-}
-
-/** Presupuesto de ejemplo para la primera carga */
-function sampleBudget() {
-  const b = blankBudget();
-  b.meta = { cliente: 'Cliente Demo C.A.', agencia: 'Agencia Creativa', proyecto: 'Campaña Lanzamiento', version: 'V1', derechos: '1 año · TV + Digital · Venezuela', fecha: today(), duracion: '30" + 15"', dias: 2 };
-  const I = newItem;
-  b.items = [
-    I('preprod', 'Scouting de locaciones', 1, 2, 150),
-    I('preprod', 'Casting', 1, 1, 400),
-    I('preprod', 'Storyboard', 1, 1, 350),
-    I('preprod', 'Reunión de pre-producción (PPM)', 1, 1, 120),
-    I('prod', 'Paquete de cámara', 1, 2, 650),
-    I('prod', 'Luces y grip', 1, 2, 500),
-    I('prod', 'Locación', 1, 2, 400),
-    I('prod', 'Arte y utilería', 1, 1, 600),
-    I('prod', 'Catering (pax)', 25, 2, 8),
-    I('prod', 'Transporte', 2, 2, 90),
-    I('prod', 'Talentos', 3, 1, 250),
-    I('hon', 'Director', 1, 1, 1500),
-    I('hon', 'Director de Fotografía (DP)', 1, 2, 350),
-    I('hon', 'Fotógrafo', 1, 1, 400),
-    I('hon', 'Productor', 1, 5, 120),
-    I('hon', 'Asistente de dirección', 1, 2, 100),
-    I('post', 'Edición', 1, 4, 120),
-    I('post', 'Corrección de color', 1, 2, 150),
-    I('post', 'Retoque fotográfico (imágenes)', 20, 1, 15),
-    I('post', 'Animación / Motion graphics', 1, 1, 600),
-    I('post', 'Música y diseño sonoro', 1, 1, 450),
-  ];
+/** Construye un presupuesto nuevo a partir del JSON BASE */
+function fromBase() {
+  const b = clone(BASE_BUDGET);
+  b.id = uid(); b.savedAt = null; b.meta.fecha = today();
+  b.items = CAT_ORDER.flatMap(cat => (BASE_BUDGET.items[cat] || []).map(name => newItem(cat, name)));
   return b;
 }
 
-/** Normaliza un presupuesto cargado (por si viene de una versión anterior o incompleto) */
-function hydrate(b) {
-  const d = blankBudget();
+function demoBudget() {
+  const b = fromBase();
+  Object.assign(b.meta, DEMO.meta);
+  b.items.forEach(i => { const v = DEMO.values[i.name]; if (v) [i.qty, i.days, i.unit] = v; });
+  return b;
+}
+
+/** Completa campos faltantes en presupuestos guardados con versiones anteriores */
+function hydrate(raw) {
+  const d = fromBase();
   return {
-    ...d, ...b,
-    meta: { ...d.meta, ...(b.meta || {}) },
-    vars: { ...d.vars, ...(b.vars || {}) },
-    activeRate: { ...d.activeRate, ...(b.activeRate || {}) },
-    rates: (b.rates && b.rates.length) ? b.rates : d.rates,
-    items: (b.items || []).map(i => ({ ...newItem(i.cat || 'prod'), ...i })),
+    ...d, ...raw,
+    meta: { ...d.meta, ...(raw.meta || {}) },
+    vars: { ...d.vars, ...(raw.vars || {}) },
+    activeRate: { ...d.activeRate, ...(raw.activeRate || {}) },
+    rates: raw.rates?.length ? raw.rates : d.rates,
+    items: Array.isArray(raw.items) ? raw.items.map(i => ({ ...newItem(i.cat || 'prod'), ...i, real: { ...newItem('prod').real, ...(i.real || {}) } })) : d.items,
+  };
+}
+const findItem = id => state.items.find(i => i.id === id);
+
+/* -------------------------------------------------------------------------
+   4. MONEDAS Y TASAS
+   ------------------------------------------------------------------------- */
+function rateFor(cur, s = state) {
+  if (cur === 'USD') return 1;
+  const r = s.rates.find(r => r.id === s.activeRate[cur] && r.cur === cur) || s.rates.find(r => r.cur === cur);
+  return r ? (+r.value || 0) : 0;
+}
+const activeRateObj = cur => state.rates.find(r => r.id === state.activeRate[cur] && r.cur === cur) || state.rates.find(r => r.cur === cur);
+const conv = (usd, cur = state.view) => (+usd || 0) * rateFor(cur);              // USD → moneda
+const fromView = (v, cur = state.view) => { const r = rateFor(cur); return r ? (+v || 0) / r : 0; }; // moneda → USD
+const fmt = (usd, cur = state.view) => `${CUR[cur].sym} ${NF.format(conv(usd, cur))}`;
+
+/**
+ * Costo real en USD de un renglón, usando SU tasa de pago (no la del proyecto).
+ * Ej: pagado Bs 25.000 a tasa 300 → $83,33. Luego se muestra en la moneda de vista con la tasa del proyecto.
+ */
+function payRate(i, s = state) {
+  const r = i.real || {};
+  if (r.cur === 'USD') return 1;
+  if (r.rateId === 'custom') return +r.custom || 0;
+  const pr = s.rates.find(x => x.id === r.rateId && x.cur === r.cur);
+  return pr ? +pr.value : rateFor(r.cur, s);
+}
+function realUSD(i, s = state) {
+  const amt = +i.real?.amount || 0;
+  if (!amt) return 0;
+  const rate = payRate(i, s);
+  return rate ? amt / rate : 0;
+}
+
+/* -------------------------------------------------------------------------
+   5. MOTOR DE CÁLCULO Y DILUCIÓN
+   Por renglón (USD):
+     neto      = cant × días × unitario
+     aumHon    = neto × %aumento honorarios          (solo categoría Honorarios)
+     markup    = (neto + aumHon) × %markup global
+     base      = neto + aumHon + markup
+     agencia   = base × %agencia
+     extras    = montosExtras × base / Σbase         (prorrateo proporcional)
+     cliente   = base + agencia + extras             ← monto DILUIDO que ve el cliente
+   Total: subtotal = Σcliente ; IVA = subtotal × %impuestos ; total = subtotal + IVA
+   ------------------------------------------------------------------------- */
+const itemNet = i => (+i.qty || 0) * (+i.days || 0) * (+i.unit || 0);
+
+function calc(s = state) {
+  const v = s.vars;
+  const mk = (+v.markup || 0) / 100, hx = (+v.honExtra || 0) / 100, ag = (+v.agency || 0) / 100, tx = (+v.tax || 0) / 100;
+  const extras = +v.extras || 0;
+
+  const rows = s.items.map(i => {
+    const net = itemNet(i), hon = i.cat === 'hon' ? net * hx : 0, mkA = (net + hon) * mk;
+    return { item: i, net, hon, mk: mkA, base: net + hon + mkA };
+  });
+  const sumBase = rows.reduce((a, r) => a + r.base, 0);
+
+  const cat = {}, byId = {};
+  CAT_ORDER.forEach(c => cat[c] = { net: 0, hon: 0, mk: 0, ag: 0, ex: 0, client: 0, real: 0, paidNet: 0 });
+  rows.forEach(r => {
+    r.ag = r.base * ag;
+    r.ex = sumBase > 0 ? extras * r.base / sumBase : 0;
+    r.client = r.base + r.ag + r.ex;
+    r.real = realUSD(r.item, s);
+    r.paid = (+r.item.real?.amount || 0) > 0;
+    r.variance = r.paid ? r.net - r.real : 0;           // + ahorro / − sobregiro (contra el neto)
+    byId[r.item.id] = r;
+    const c = cat[r.item.cat];
+    if (!c) return;
+    c.net += r.net; c.hon += r.hon; c.mk += r.mk; c.ag += r.ag; c.ex += r.ex; c.client += r.client; c.real += r.real;
+    if (r.paid) c.paidNet += r.net;
+  });
+
+  const sum = k => CAT_ORDER.reduce((a, c) => a + cat[c][k], 0);
+  const unallocated = sumBase > 0 ? 0 : extras;          // extras sin base donde prorratear
+  const subtotal = sum('client') + unallocated;
+  const tax = subtotal * tx;
+  const net = sum('net'), real = sum('real'), paidNet = sum('paidNet');
+  return {
+    rows, byId, cat, unallocated, subtotal, tax, total: subtotal + tax,
+    net, hon: sum('hon'), mk: sum('mk'), ag: sum('ag'), ex: sum('ex'), real, paidNet,
+    variance: paidNet - real,
+    projectedProfit: subtotal - real - (net - paidNet),  // facturado sin IVA − (pagado + neto por pagar)
   };
 }
 
-const findItem = id => state.items.find(i => i.id === id);
-
-/* ---------------------------------------------------------------
-   3. MONEDAS Y TASAS
-   --------------------------------------------------------------- */
-/** Tasa activa de una moneda (1 USD = X) */
-function rateFor(cur) {
-  if (cur === 'USD') return 1;
-  const r = state.rates.find(r => r.id === state.activeRate[cur] && r.cur === cur) || state.rates.find(r => r.cur === cur);
-  return r ? (+r.value || 0) : 0;
-}
-const rateObj = cur => state.rates.find(r => r.id === state.activeRate[cur] && r.cur === cur) || state.rates.find(r => r.cur === cur);
-
-/** USD → moneda indicada (por defecto la de la vista) */
-const conv = (usd, cur = state.view) => (+usd || 0) * rateFor(cur);
-/** Moneda indicada → USD */
-function fromView(v, cur = state.view) {
-  const r = rateFor(cur);
-  return r ? (+v || 0) / r : 0;
-}
-/** Formatea un monto USD en la moneda indicada */
-const fmt = (usd, cur = state.view) => `${CUR[cur].sym} ${NF.format(conv(usd, cur))}`;
-
-/* ---------------------------------------------------------------
-   4. MOTOR DE CÁLCULO
-   --------------------------------------------------------------- */
-const itemTotal = i => (+i.qty || 0) * (+i.days || 0) * (+i.unit || 0);
-
-/**
- * Calcula todo el cierre del presupuesto (en USD):
- *  costo directo = Pre + Pro + Post + Honorarios
- *  + markup general (sobre todo el costo directo)
- *  + markup extra (solo sobre honorarios)
- *  + % agencia (sobre el subtotal con markup)
- *  + montos extras
- *  = base imponible  → + impuestos = TOTAL
- */
-function calc(s = state) {
-  const cat = {}, realCat = {};
-  CAT_ORDER.forEach(c => { cat[c] = 0; realCat[c] = 0; });
-  s.items.forEach(i => { cat[i.cat] += itemTotal(i); realCat[i.cat] += +i.real || 0; });
-
-  const v = s.vars;
-  const direct     = CAT_ORDER.reduce((a, c) => a + cat[c], 0);
-  const markupGen  = direct * (+v.markup || 0) / 100;
-  const markupHon  = cat.hon * (+v.markupHon || 0) / 100;
-  const subMarkup  = direct + markupGen + markupHon;
-  const agency     = subMarkup * (+v.agency || 0) / 100;
-  const extras     = +v.extras || 0;
-  const base       = subMarkup + agency + extras;
-  const tax        = base * (+v.tax || 0) / 100;
-  const total      = base + tax;
-  const realAll    = CAT_ORDER.reduce((a, c) => a + realCat[c], 0);
-
-  return { cat, realCat, direct, markupGen, markupHon, subMarkup, agency, extras, base, tax, total, realAll,
-           variance: direct - realAll, margin: base - realAll };
-}
-
-/* ---------------------------------------------------------------
-   5. RENDER: PANELES LATERALES
-   --------------------------------------------------------------- */
-function renderCurrencySwitch() {
+/* -------------------------------------------------------------------------
+   6. COMPONENTES UI
+   ------------------------------------------------------------------------- */
+function CurrencySwitch() {
   $('#currencySwitch').innerHTML = Object.keys(CUR).map(c => `
-    <button data-action="currency" data-cur="${c}"
-      class="px-3 py-1.5 rounded-md text-sm font-semibold transition ${state.view === c ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white'}">
-      ${c === 'VES' ? 'Bs' : c}
-    </button>`).join('');
+    <button data-action="currency" data-cur="${c}" class="px-3 py-1.5 rounded-md text-sm font-semibold transition
+      ${state.view === c ? 'bg-accent text-white' : 'text-neutral-300 hover:text-white'}">${c === 'VES' ? 'Bs' : c}</button>`).join('');
 }
 
-function renderTotalsBar() {
+function TotalsBar() {
   const c = calc(), m = state.meta;
   $('#totalsBar').innerHTML = `
-    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+    <div class="px-3 sm:px-5 py-2.5 max-w-[1400px] mx-auto flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
       <div class="min-w-0">
-        <div class="text-[11px] uppercase tracking-wide text-slate-500">${esc(m.cliente || 'Sin cliente')}</div>
-        <div class="font-semibold truncate">${esc(m.proyecto || 'Sin título')} <span class="text-slate-400 font-normal">· ${esc(m.version)}</span></div>
+        <div class="text-[11px] uppercase tracking-wide text-neutral-500 truncate">${esc(m.cliente || 'Sin cliente')} ${m.cotizacion ? '· ' + esc(m.cotizacion) : ''}</div>
+        <div class="font-semibold truncate">${esc(m.proyecto || 'Proyecto sin título')} <span class="badge bg-neutral-900 text-white ml-1">${esc(m.version || 'V1')}</span></div>
       </div>
       <div class="flex flex-wrap items-end gap-x-5 gap-y-1">
         ${['VES', 'USD', 'EUR'].map(cur => `
-          <div class="${cur === state.view ? 'text-indigo-700' : 'text-slate-500'}">
+          <div class="${cur === state.view ? 'text-accent' : 'text-neutral-500'}">
             <div class="text-[10px] uppercase tracking-wide">Total ${cur === 'VES' ? 'Bs' : cur}</div>
             <div class="font-bold tabular-nums ${cur === state.view ? 'text-xl' : 'text-sm'}">${fmt(c.total, cur)}</div>
           </div>`).join('')}
@@ -428,405 +502,457 @@ function renderTotalsBar() {
     </div>`;
 }
 
-function renderMeta() {
-  $('#metaPanel').innerHTML = `<div class="grid grid-cols-2 gap-2">
-    ${META_FIELDS.map(f => `
-      <label class="block ${f.full ? 'col-span-2' : ''}">
-        <span class="text-xs text-slate-500">${f.label}</span>
-        <input class="inp" type="${f.type || 'text'}" data-meta="${f.k}" value="${esc(state.meta[f.k])}" placeholder="${esc(f.ph || '')}">
-      </label>`).join('')}
-  </div>`;
+function MetaCard() {
+  $('#metaCard').innerHTML = `
+    <div class="flex items-center justify-between mb-3"><h2 class="font-bold">Datos del presupuesto</h2>
+      <span class="text-[11px] text-neutral-500">${state.savedAt ? 'Guardado ' + new Date(state.savedAt).toLocaleString('es-VE') : 'Sin guardar'}</span></div>
+    <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2">
+      ${META_FIELDS.map(f => `
+        <label class="block ${f.k === 'proyecto' ? 'col-span-2 md:col-span-2 xl:col-span-1' : ''}">
+          <span class="text-[11px] text-neutral-500">${f.label}</span>
+          <input class="inp" type="${f.type || 'text'}" data-meta="${f.k}" value="${esc(state.meta[f.k])}">
+        </label>`).join('')}
+    </div>`;
 }
 
-function renderVars() {
+function VarsPanel() {
   const sym = CUR[state.view].sym;
-  $('#varsPanel').innerHTML = `<div class="grid grid-cols-2 gap-2">
-    ${Object.entries(VAR_DEFS).map(([k, d]) => `
-      <label class="block ${k === 'extras' ? 'col-span-2' : ''}">
-        <span class="text-xs text-slate-500">${d.label}</span>
-        <div class="relative">
-          <input type="number" step="0.01" class="inp text-right pr-8" data-var="${k}"
-            value="${d.pct ? state.vars[k] : round2(conv(state.vars[k]))}">
-          <span class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">${d.pct ? '%' : sym}</span>
-        </div>
-      </label>`).join('')}
-  </div>
-  <p class="mt-2 text-[11px] text-slate-500">Los cambios recalculan el total al instante.</p>`;
+  $('#varsPanel').innerHTML = `
+    <div class="grid grid-cols-2 gap-2">
+      ${Object.entries(VAR_DEFS).map(([k, d]) => `
+        <label class="block ${k === 'extras' ? 'col-span-2' : ''}">
+          <span class="text-[11px] text-neutral-500">${d.label}</span>
+          <div class="relative">
+            <input type="number" step="0.01" min="0" class="inp text-right pr-8" data-var="${k}" value="${d.pct ? state.vars[k] : round2(conv(state.vars[k]))}">
+            <span class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">${d.pct ? '%' : sym}</span>
+          </div>
+        </label>`).join('')}
+    </div>
+    <p class="mt-2 text-[11px] text-neutral-500 leading-relaxed">Markup, aumento de honorarios, agencia y extras se <b>diluyen</b> en los montos del Sumario. Su desglose solo aparece en <b>Ejecutable</b>.</p>`;
 }
 
-function renderRates() {
+function RatesPanel() {
   $('#ratesPanel').innerHTML = `
-    <p class="text-[11px] text-slate-500 mb-2">Cada tasa indica: <b>1 USD = X</b>. Edita la etiqueta, la moneda y el valor; marca cuál usar.</p>
-    <div class="space-y-3">
+    <p class="text-[11px] text-neutral-500 mb-2">Cada tasa: <b>1 USD = X</b>. Marca la tasa activa de cada moneda para el proyecto.</p>
+    <div class="space-y-2">
       ${state.rates.map(r => `
-        <div class="rounded-lg border border-slate-200 p-2 space-y-1.5">
-          <div class="grid grid-cols-12 gap-1.5">
-            <input class="inp col-span-12 sm:col-span-6 lg:col-span-12 xl:col-span-6" data-rate="${r.id}" data-rf="label" value="${esc(r.label)}" placeholder="Etiqueta">
-            <select class="inp col-span-4 sm:col-span-2 lg:col-span-4 xl:col-span-2 !px-1" data-rate-cur="${r.id}">
+        <div class="rounded-lg border border-neutral-200 p-2 space-y-1.5">
+          <div class="flex gap-1.5">
+            <input class="inp flex-1 min-w-0" data-rate="${r.id}" data-rf="label" value="${esc(r.label)}">
+            <select class="inp !w-16 !px-1" data-rate-cur="${r.id}">
               <option value="VES" ${r.cur === 'VES' ? 'selected' : ''}>Bs</option>
               <option value="EUR" ${r.cur === 'EUR' ? 'selected' : ''}>€</option>
             </select>
-            <input type="number" step="0.0001" min="0" class="inp col-span-6 sm:col-span-3 lg:col-span-6 xl:col-span-3 text-right" data-rate="${r.id}" data-rf="value" value="${r.value}">
-            <button class="col-span-2 sm:col-span-1 lg:col-span-2 xl:col-span-1 text-slate-400 hover:text-rose-600" data-action="del-rate" data-id="${r.id}" title="Eliminar tasa">✕</button>
+            <input type="number" step="0.0001" min="0" class="inp !w-28 text-right" data-rate="${r.id}" data-rf="value" value="${r.value}">
+            <button class="px-1 text-neutral-400 hover:text-red-600" data-action="del-rate" data-id="${r.id}" title="Eliminar">✕</button>
           </div>
-          <label class="flex items-center gap-1.5 text-xs text-slate-600">
-            <input type="radio" name="active-${r.cur}" data-rate-active="${r.id}" ${state.activeRate[r.cur] === r.id ? 'checked' : ''}>
-            Usar como tasa activa para ${CUR[r.cur].sym}
+          <label class="flex items-center gap-1.5 text-xs text-neutral-600">
+            <input type="radio" class="accent-[#572364]" name="active-${r.cur}" data-rate-active="${r.id}" ${state.activeRate[r.cur] === r.id ? 'checked' : ''}>
+            Tasa activa del proyecto para ${CUR[r.cur].sym}
           </label>
         </div>`).join('')}
     </div>
-    <button class="btn-light w-full mt-3" data-action="add-rate">+ Agregar tasa</button>`;
+    <button class="btn-ghost w-full mt-2" data-action="add-rate">+ Agregar tasa</button>`;
 }
 
-function renderTabs() {
-  $('#tabs').innerHTML = TABS.map(t =>
-    `<button class="tab-btn ${activeTab === t.id ? 'tab-on' : ''}" data-action="tab" data-tab="${t.id}">${t.label}</button>`).join('');
+function Tabs() {
+  $('#tabs').innerHTML = TABS.map(t => `<button class="tab-btn ${activeTab === t.id ? 'tab-on' : ''}" data-action="tab" data-tab="${t.id}">${t.label}</button>`).join('');
 }
 
-/* ---------------------------------------------------------------
-   6. RENDER: PESTAÑAS
-   --------------------------------------------------------------- */
-function renderTab() {
-  const el = $('#tabContent');
-  switch (activeTab) {
-    case 'sumario':    el.innerHTML = summaryHtml(); break;
-    case 'prepro':     el.innerHTML = itemsTableHtml('preprod') + itemsTableHtml('prod') + preproTotalHtml(); break;
-    case 'hon':        el.innerHTML = itemsTableHtml('hon'); break;
-    case 'post':       el.innerHTML = itemsTableHtml('post'); break;
-    case 'ejecutable': el.innerHTML = ejecutableHtml(); break;
+/* ---------- 6.1 Pestaña SUMARIO (vista cliente: montos diluidos, ítems en 0 ocultos) ---------- */
+function SummaryTab() {
+  const c = calc();
+  const visibleCats = CAT_ORDER.filter(k => c.cat[k].client > EPS);
+  if (!visibleCats.length) {
+    return `<div class="card p-10 text-center text-neutral-500">
+      <div class="text-lg font-semibold text-neutral-800 mb-1">El Sumario está vacío</div>
+      Asigna cantidades y montos en las pestañas de categorías o usa la Importación inteligente.<br>Los renglones en 0 permanecen ocultos en esta vista.</div>`;
   }
-}
-
-/* ----- 6.1 Sumario ----- */
-function summaryHtml() {
-  const c = calc(), v = state.vars;
-  const pct = x => c.direct ? (x / c.direct * 100) : 0;
-
-  // Tarjetas por categoría
-  const cards = CAT_ORDER.map(k => `
-    <div class="card p-3">
-      <div class="text-[11px] uppercase tracking-wide text-slate-500">${CATS[k].label}</div>
-      <div class="text-lg font-bold tabular-nums">${fmt(c.cat[k])}</div>
-      <div class="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-indigo-500" style="width:${pct(c.cat[k]).toFixed(1)}%"></div></div>
-      <div class="text-[11px] text-slate-500 mt-1">${pct(c.cat[k]).toFixed(1)}% del costo directo</div>
-    </div>`).join('');
-
-  // Detalle por categoría: los nombres vienen directo del estado (reflejan las ediciones)
-  const detail = CAT_ORDER.map(k => {
-    const items = state.items.filter(i => i.cat === k);
-    return `
-      <tr class="bg-slate-50"><td colspan="3" class="px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">${CATS[k].label}</td></tr>
-      ${items.length ? items.map(i => `
-        <tr class="border-b border-slate-100">
-          <td class="px-3 py-1.5">${esc(i.name) || '<span class="text-slate-400 italic">Sin nombre</span>'}</td>
-          <td class="px-3 py-1.5 text-right text-slate-500 text-xs whitespace-nowrap">${i.qty} × ${i.days}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">${fmt(itemTotal(i))}</td>
-        </tr>`).join('') : `<tr><td colspan="3" class="px-3 py-1.5 text-slate-400 italic text-xs">Sin ítems</td></tr>`}
-      <tr class="border-b border-slate-200">
-        <td class="px-3 py-1.5 font-semibold" colspan="2">Subtotal ${CATS[k].label}</td>
-        <td class="px-3 py-1.5 text-right font-semibold tabular-nums whitespace-nowrap">${fmt(c.cat[k])}</td>
-      </tr>`;
+  const cards = visibleCats.map(k => {
+    const p = c.subtotal ? c.cat[k].client / c.subtotal * 100 : 0;
+    return `<div class="card p-3">
+      <div class="text-[11px] uppercase tracking-wide text-neutral-500">${CATS[k].label}</div>
+      <div class="text-lg font-bold tabular-nums">${fmt(c.cat[k].client)}</div>
+      <div class="mt-2 h-1.5 rounded-full bg-neutral-100 overflow-hidden"><div class="h-full bg-accent" style="width:${p.toFixed(1)}%"></div></div>
+      <div class="text-[11px] text-neutral-500 mt-1">${p.toFixed(1)}% del subtotal</div></div>`;
   }).join('');
 
-  // Bloque de cierre
-  const row = (label, val, cls = '') => `
-    <tr class="border-b border-slate-100 ${cls}"><td class="px-3 py-1.5" colspan="2">${label}</td>
-    <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">${fmt(val)}</td></tr>`;
-  const closing = [
-    row('Costo directo (Pre + Pro + Honorarios + Post)', c.direct, 'font-semibold'),
-    row(`Markup general (${v.markup}%)`, c.markupGen),
-    row(`Markup extra honorarios (${v.markupHon}%)`, c.markupHon),
-    row('Subtotal con markup', c.subMarkup, 'font-semibold'),
-    row(`Agencia (${v.agency}%)`, c.agency),
-    row('Montos extras', c.extras),
-    row('Base imponible', c.base, 'font-semibold'),
-    row(`Impuestos (${v.tax}%)`, c.tax),
-  ].join('');
+  const body = visibleCats.map(k => {
+    const items = state.items.filter(i => i.cat === k && c.byId[i.id].client > EPS); // FILTRO: solo > 0
+    return `
+      <tr class="bg-neutral-100"><td class="px-3 py-2 font-bold uppercase text-xs tracking-wide" colspan="2">${CATS[k].label}</td>
+        <td class="px-3 py-2 text-right font-bold tabular-nums whitespace-nowrap">${fmt(c.cat[k].client)}</td></tr>
+      ${state.showDetail ? items.map(i => `
+        <tr class="border-b border-neutral-100">
+          <td class="px-3 py-1.5 pl-6">${esc(i.name)}</td>
+          <td class="px-3 py-1.5 text-right text-xs text-neutral-500 whitespace-nowrap">${i.qty} × ${i.days}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">${fmt(c.byId[i.id].client)}</td>
+        </tr>`).join('') : ''}`;
+  }).join('');
 
-  const rv = rateObj('VES'), re = rateObj('EUR');
   return `
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">${cards}</div>
     <div class="card overflow-hidden">
-      <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2">
-        <h2 class="font-bold">Sumario del presupuesto</h2>
-        <span class="text-xs text-slate-500">Montos en ${CUR[state.view].label}</span>
+      <div class="px-4 py-3 border-b border-neutral-200 flex flex-wrap items-center justify-between gap-2">
+        <div><h2 class="font-bold">Sumario</h2><p class="text-[11px] text-neutral-500">Vista cliente · ${CUR[state.view].label}</p></div>
+        <label class="flex items-center gap-2 text-xs text-neutral-600 no-print">
+          <input type="checkbox" class="accent-[#572364]" data-toggle="showDetail" ${state.showDetail ? 'checked' : ''}> Mostrar renglones
+        </label>
       </div>
       <div class="overflow-x-auto scroll-thin">
-        <table class="w-full text-sm min-w-[480px]">
-          <thead><tr class="border-b"><th class="th px-3">Concepto</th><th class="th px-3 text-right">Cant × Días</th><th class="th px-3 text-right">Monto</th></tr></thead>
-          <tbody>${detail}</tbody>
-          <tbody class="border-t-2 border-slate-300">${closing}
-            <tr class="bg-indigo-600 text-white"><td class="px-3 py-3 font-bold text-base" colspan="2">TOTAL / CIERRE</td>
-              <td class="px-3 py-3 text-right font-bold text-base tabular-nums whitespace-nowrap">${fmt(c.total)}</td></tr>
+        <table class="w-full text-sm min-w-[460px]">
+          <thead><tr class="border-b border-neutral-200"><th class="th px-3">Concepto</th><th class="th px-3 text-right">Cant × Días</th><th class="th px-3 text-right">Monto</th></tr></thead>
+          <tbody>${body}</tbody>
+          <tbody class="border-t-2 border-neutral-300">
+            <tr><td class="px-3 py-2 font-semibold" colspan="2">Subtotal</td><td class="px-3 py-2 text-right font-semibold tabular-nums whitespace-nowrap">${fmt(c.subtotal)}</td></tr>
+            <tr class="border-b border-neutral-200"><td class="px-3 py-2" colspan="2">Impuestos (${state.vars.tax}%)</td><td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">${fmt(c.tax)}</td></tr>
+            <tr class="bg-accent text-white"><td class="px-3 py-3 font-bold text-base" colspan="2">TOTAL</td><td class="px-3 py-3 text-right font-bold text-base tabular-nums whitespace-nowrap">${fmt(c.total)}</td></tr>
           </tbody>
         </table>
-      </div>
-      <div class="px-4 py-2 text-[11px] text-slate-500 border-t">
-        ${rv ? `${esc(rv.label)}: 1 USD = Bs ${NF.format(rv.value)}` : ''} ${re ? ` · ${esc(re.label)}: 1 USD = € ${NF.format(re.value)}` : ''}
       </div>
     </div>`;
 }
 
-/* ----- 6.2 Tablas de ítems (Pre, Pro, Honorarios, Post) ----- */
-function itemRowHtml(i) {
+/* ---------- 6.2 Pestañas de CATEGORÍAS (montos netos editables) ---------- */
+function ItemRow(i, r) {
+  const hidden = r.client <= EPS;
   return `
-    <tr class="border-b border-slate-100 hover:bg-slate-50/60">
-      <td class="py-1.5 pr-2"><input class="inp" data-id="${i.id}" data-field="name" value="${esc(i.name)}" placeholder="Nombre del ítem"></td>
+    <tr class="border-b border-neutral-100 ${hidden ? 'bg-neutral-50/70' : ''}">
+      <td class="py-1.5 px-2"><input class="inp ${hidden ? 'text-neutral-500' : ''}" data-id="${i.id}" data-field="name" value="${esc(i.name)}" placeholder="Nombre del renglón"></td>
       <td class="py-1.5 px-1"><input type="number" min="0" step="1" class="inp text-right" data-id="${i.id}" data-field="qty" value="${i.qty}"></td>
       <td class="py-1.5 px-1"><input type="number" min="0" step="0.5" class="inp text-right" data-id="${i.id}" data-field="days" value="${i.days}"></td>
       <td class="py-1.5 px-1"><input type="number" min="0" step="0.01" class="inp text-right" data-id="${i.id}" data-field="unit" value="${round2(conv(i.unit))}"></td>
-      <td class="py-1.5 px-2 text-right font-medium tabular-nums whitespace-nowrap" data-sub="${i.id}">${fmt(itemTotal(i))}</td>
-      <td class="py-1.5 text-right"><button class="p-1.5 text-slate-400 hover:text-rose-600" data-action="del-item" data-id="${i.id}" title="Eliminar ítem">✕</button></td>
+      <td class="py-1.5 px-2 text-right font-medium tabular-nums whitespace-nowrap" data-net="${i.id}">${fmt(r.net)}</td>
+      <td class="py-1.5 px-2 text-right text-xs tabular-nums whitespace-nowrap text-neutral-500" data-cl="${i.id}">${hidden ? '<span class="badge bg-neutral-200 text-neutral-500">Oculto</span>' : fmt(r.client)}</td>
+      <td class="py-1.5 text-right"><button class="p-1.5 text-neutral-400 hover:text-red-600" data-action="del-item" data-id="${i.id}" title="Eliminar renglón">✕</button></td>
     </tr>`;
 }
 
-function itemsTableHtml(cat) {
-  const items = state.items.filter(i => i.cat === cat);
-  const sym = CUR[state.view].sym;
+function CategoryTable(cat) {
+  const c = calc();
+  const items = state.items.filter(i => i.cat === cat && (!ui.onlyUsed || c.byId[i.id].net > EPS));
   return `
     <div class="card mb-4">
-      <div class="px-4 py-3 border-b flex items-center justify-between gap-2">
+      <div class="px-4 py-3 border-b border-neutral-200 flex flex-wrap items-center justify-between gap-2">
         <h2 class="font-bold">${CATS[cat].label}</h2>
-        <span class="text-sm font-semibold text-indigo-700 tabular-nums" data-cattotal="${cat}">${fmt(calc().cat[cat])}</span>
+        <div class="text-right text-sm">
+          <span class="text-neutral-500">Neto</span> <b class="tabular-nums" data-catnet="${cat}">${fmt(c.cat[cat].net)}</b>
+          <span class="text-neutral-300 mx-1">|</span>
+          <span class="text-neutral-500">Al cliente</span> <b class="tabular-nums text-accent" data-catcl="${cat}">${fmt(c.cat[cat].client)}</b>
+        </div>
       </div>
-      <div class="overflow-x-auto scroll-thin px-3">
-        <table class="w-full text-sm min-w-[640px]">
+      <div class="overflow-x-auto scroll-thin px-2">
+        <table class="w-full text-sm min-w-[720px]">
           <thead><tr>
-            <th class="th">Ítem</th><th class="th w-20 text-right">Cant.</th><th class="th w-20 text-right">Días</th>
-            <th class="th w-36 text-right">Unitario (${sym})</th><th class="th w-36 text-right">Subtotal</th><th class="w-8"></th>
+            <th class="th">Renglón</th><th class="th w-20 text-right">Cant.</th><th class="th w-20 text-right">Días</th>
+            <th class="th w-36 text-right">Unitario neto (${CUR[state.view].sym})</th><th class="th w-32 text-right">Neto</th>
+            <th class="th w-32 text-right">Al cliente</th><th class="w-8"></th>
           </tr></thead>
-          <tbody>${items.length ? items.map(itemRowHtml).join('') :
-            `<tr><td colspan="6" class="py-6 text-center text-slate-400 text-sm">Aún no hay ítems en esta categoría.</td></tr>`}</tbody>
+          <tbody>${items.length ? items.map(i => ItemRow(i, c.byId[i.id])).join('') :
+            `<tr><td colspan="7" class="py-6 text-center text-neutral-400">${ui.onlyUsed ? 'No hay renglones con monto.' : 'Sin renglones.'}</td></tr>`}</tbody>
         </table>
       </div>
-      <div class="p-3 border-t">
-        <button class="btn-light" data-action="add-item" data-cat="${cat}">+ Agregar nuevo ítem</button>
-      </div>
+      <div class="p-3 border-t border-neutral-200"><button class="btn-ghost" data-action="add-item" data-cat="${cat}">+ Agregar renglón</button></div>
     </div>`;
 }
 
-function preproTotalHtml() {
-  const c = calc();
-  return `<div class="card px-4 py-3 flex items-center justify-between font-bold">
-    <span>Total Pre-producción + Producción</span>
-    <span class="tabular-nums" data-prepro-total>${fmt(c.cat.preprod + c.cat.prod)}</span></div>`;
+function CategoryToolbar() {
+  return `<div class="flex flex-wrap items-center justify-between gap-2 mb-3 text-xs text-neutral-600">
+    <span>Montos <b>netos</b>. Los renglones en 0 quedan ocultos en el Sumario y el PDF.</span>
+    <label class="flex items-center gap-2"><input type="checkbox" class="accent-[#572364]" data-ui="onlyUsed" ${ui.onlyUsed ? 'checked' : ''}> Ver solo renglones con monto</label>
+  </div>`;
 }
 
-/* ----- 6.3 Ejecutable (presupuestado vs. real) ----- */
-function varHtml(v) {
-  if (Math.abs(v) < 0.005) return `<span class="text-slate-500">En línea</span>`;
-  return v > 0
-    ? `<span class="text-emerald-600 font-semibold">Ahorro ${fmt(v)}</span>`
-    : `<span class="text-rose-600 font-semibold">Sobregiro ${fmt(-v)}</span>`;
+/* ---------- 6.3 Pestaña EJECUTABLE (control interno, desglose transparente) ---------- */
+function varHtml(v, paid = true) {
+  if (!paid) return `<span class="text-neutral-400 text-xs">Pendiente</span>`;
+  if (Math.abs(v) < EPS) return `<span class="text-neutral-500">En línea</span>`;
+  return v > 0 ? `<span class="text-accent font-semibold">▼ Ahorro ${fmt(v)}</span>`
+               : `<span class="text-red-700 font-semibold">▲ Sobregiro ${fmt(-v)}</span>`;
 }
-const execPct = (budget, real) => budget ? `${(real / budget * 100).toFixed(0)}%` : (real ? '∞' : '0%');
 
-/** Valores calculados del Ejecutable, indexados para poder actualizarlos sin re-renderizar los inputs */
-function ejValues() {
+/** Valores calculados del ejecutable indexados por clave (para refrescar sin perder foco) */
+function execValues() {
   const c = calc(), o = {};
-  CAT_ORDER.forEach(k => {
-    o['b-' + k] = fmt(c.cat[k]);
-    o['r-' + k] = fmt(c.realCat[k]);
-    o['v-' + k] = varHtml(c.cat[k] - c.realCat[k]);
-  });
-  o['b-all'] = fmt(c.direct); o['r-all'] = fmt(c.realAll); o['v-all'] = varHtml(c.variance);
-  o['p-all'] = execPct(c.direct, c.realAll);
-  o['margin'] = fmt(c.margin);
-  o['base'] = fmt(c.base);
-  state.items.forEach(i => { o['v-' + i.id] = varHtml(itemTotal(i) - i.real); o['p-' + i.id] = execPct(itemTotal(i), i.real); });
+  c.rows.forEach(r => { o['real-' + r.item.id] = r.paid ? fmt(r.real) : '—'; o['var-' + r.item.id] = varHtml(r.variance, r.paid); });
+  CAT_ORDER.forEach(k => { o['creal-' + k] = fmt(c.cat[k].real); o['cvar-' + k] = varHtml(c.cat[k].paidNet - c.cat[k].real, c.cat[k].paidNet > 0 || c.cat[k].real > 0); });
+  Object.assign(o, { net: fmt(c.net), real: fmt(c.real), var: varHtml(c.variance, c.real > 0), profit: fmt(c.projectedProfit), subtotal: fmt(c.subtotal) });
   return o;
 }
 
-function ejecutableHtml() {
-  const o = ejValues();
-  const blocks = CAT_ORDER.map(k => {
-    const items = state.items.filter(i => i.cat === k);
-    return `
-      <tr class="bg-slate-50"><td colspan="5" class="px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">${CATS[k].label}</td></tr>
-      ${items.map(i => `
-        <tr class="border-b border-slate-100">
-          <td class="px-3 py-1.5">${esc(i.name) || '<i class="text-slate-400">Sin nombre</i>'}</td>
-          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">${fmt(itemTotal(i))}</td>
-          <td class="px-2 py-1.5"><input type="number" min="0" step="0.01" class="inp text-right" data-id="${i.id}" data-field="real" value="${round2(conv(i.real))}"></td>
-          <td class="px-3 py-1.5 text-right text-xs text-slate-500" data-ej="p-${i.id}">${o['p-' + i.id]}</td>
-          <td class="px-3 py-1.5 text-right whitespace-nowrap" data-ej="v-${i.id}">${o['v-' + i.id]}</td>
-        </tr>`).join('') || `<tr><td colspan="5" class="px-3 py-1.5 text-xs italic text-slate-400">Sin ítems</td></tr>`}
-      <tr class="border-b border-slate-200 font-semibold">
-        <td class="px-3 py-1.5">Subtotal</td>
-        <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap" data-ej="b-${k}">${o['b-' + k]}</td>
-        <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap" data-ej="r-${k}">${o['r-' + k]}</td>
-        <td></td>
-        <td class="px-3 py-1.5 text-right whitespace-nowrap" data-ej="v-${k}">${o['v-' + k]}</td>
-      </tr>`;
+function RateSelect(i) {
+  const r = i.real;
+  if (r.cur === 'USD') return `<span class="text-xs text-neutral-400">No aplica</span>`;
+  const sel = r.rateId || state.activeRate[r.cur];
+  const opts = state.rates.filter(x => x.cur === r.cur).map(x =>
+    `<option value="${x.id}" ${sel === x.id ? 'selected' : ''}>${esc(x.label)} · ${NF.format(x.value)}</option>`).join('');
+  return `<div class="flex gap-1">
+    <select class="inp !text-xs" data-real-rate="${i.id}">${opts}<option value="custom" ${sel === 'custom' ? 'selected' : ''}>Tasa personalizada…</option></select>
+    ${sel === 'custom' ? `<input type="number" step="0.0001" min="0" class="inp !w-24 text-right !text-xs" data-real-custom="${i.id}" value="${r.custom || ''}" placeholder="1 USD =">` : ''}
+  </div>`;
+}
+
+function ExecTab() {
+  const c = calc(), o = execValues(), v = state.vars;
+  const show = r => ui.execAll || r.net > EPS || r.paid;
+  const pctLbl = (l, p) => `${l}<br><span class="normal-case font-normal">(${p}%)</span>`;
+
+  // Tabla A: composición del costo
+  const compRows = CAT_ORDER.map(k => {
+    const rows = c.rows.filter(r => r.item.cat === k && show(r));
+    if (!rows.length) return '';
+    const cc = c.cat[k];
+    return `<tr class="bg-neutral-100"><td colspan="7" class="px-3 py-1.5 text-xs font-bold uppercase tracking-wide">${CATS[k].label}</td></tr>
+      ${rows.map(r => `<tr class="border-b border-neutral-100">
+        <td class="px-3 py-1.5">${esc(r.item.name)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums font-medium">${fmt(r.net)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums text-neutral-600">${r.hon ? fmt(r.hon) : '—'}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums text-neutral-600">${fmt(r.mk)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums text-neutral-600">${fmt(r.ag)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums text-neutral-600">${fmt(r.ex)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums font-semibold">${fmt(r.client)}</td></tr>`).join('')}
+      <tr class="border-b border-neutral-300 font-semibold"><td class="px-3 py-1.5">Subtotal ${CATS[k].label}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums">${fmt(cc.net)}</td><td class="px-3 py-1.5 text-right tabular-nums">${fmt(cc.hon)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums">${fmt(cc.mk)}</td><td class="px-3 py-1.5 text-right tabular-nums">${fmt(cc.ag)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums">${fmt(cc.ex)}</td><td class="px-3 py-1.5 text-right tabular-nums">${fmt(cc.client)}</td></tr>`;
   }).join('');
 
+  // Tabla B: control de pagos con tasa real por renglón
+  const payRows = CAT_ORDER.map(k => {
+    const rows = c.rows.filter(r => r.item.cat === k && show(r));
+    if (!rows.length) return '';
+    return `<tr class="bg-neutral-100"><td colspan="7" class="px-3 py-1.5 text-xs font-bold uppercase tracking-wide">${CATS[k].label}</td></tr>
+      ${rows.map(r => { const i = r.item; return `<tr class="border-b border-neutral-100">
+        <td class="px-3 py-1.5">${esc(i.name)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums">${fmt(r.net)}</td>
+        <td class="px-2 py-1.5"><input type="number" min="0" step="0.01" class="inp text-right" data-real-amount="${i.id}" value="${i.real.amount || ''}" placeholder="0,00"></td>
+        <td class="px-2 py-1.5"><select class="inp !w-20" data-real-cur="${i.id}">
+          ${Object.keys(CUR).map(cu => `<option value="${cu}" ${i.real.cur === cu ? 'selected' : ''}>${cu === 'VES' ? 'Bs' : cu}</option>`).join('')}</select></td>
+        <td class="px-2 py-1.5 min-w-[210px]">${RateSelect(i)}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap" data-ej="real-${i.id}">${o['real-' + i.id]}</td>
+        <td class="px-3 py-1.5 text-right whitespace-nowrap" data-ej="var-${i.id}">${o['var-' + i.id]}</td></tr>`; }).join('')}
+      <tr class="border-b border-neutral-300 font-semibold"><td class="px-3 py-1.5" colspan="5">Subtotal ${CATS[k].label}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums" data-ej="creal-${k}">${o['creal-' + k]}</td>
+        <td class="px-3 py-1.5 text-right" data-ej="cvar-${k}">${o['cvar-' + k]}</td></tr>`;
+  }).join('');
+
+  const empty = `<tr><td colspan="7" class="py-6 text-center text-neutral-400">No hay renglones con monto. Activa "Mostrar todos" para registrar pagos no presupuestados.</td></tr>`;
   return `
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-      <div class="card p-3"><div class="text-[11px] uppercase text-slate-500">Costo directo presupuestado</div><div class="text-lg font-bold tabular-nums" data-ej="b-all">${o['b-all']}</div></div>
-      <div class="card p-3"><div class="text-[11px] uppercase text-slate-500">Gasto real (<span data-ej="p-all">${o['p-all']}</span> ejecutado)</div><div class="text-lg font-bold tabular-nums" data-ej="r-all">${o['r-all']}</div></div>
-      <div class="card p-3"><div class="text-[11px] uppercase text-slate-500">Varianza</div><div class="text-lg" data-ej="v-all">${o['v-all']}</div></div>
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div class="card p-3"><div class="text-[11px] uppercase text-neutral-500">Neto presupuestado</div><div class="text-lg font-bold tabular-nums" data-ej="net">${o.net}</div></div>
+      <div class="card p-3"><div class="text-[11px] uppercase text-neutral-500">Gasto real</div><div class="text-lg font-bold tabular-nums" data-ej="real">${o.real}</div></div>
+      <div class="card p-3"><div class="text-[11px] uppercase text-neutral-500">Varianza (pagados)</div><div class="text-base" data-ej="var">${o.var}</div></div>
+      <div class="card p-3 border-accent/40"><div class="text-[11px] uppercase text-neutral-500">Utilidad proyectada</div><div class="text-lg font-bold tabular-nums text-accent" data-ej="profit">${o.profit}</div>
+        <div class="text-[10px] text-neutral-500">Facturado sin IVA <span data-ej="subtotal">${o.subtotal}</span> − costos</div></div>
     </div>
+    ${c.unallocated > EPS ? `<div class="card p-3 mb-4 text-sm border-red-300 text-red-700">Hay ${fmt(c.unallocated)} en montos extras sin renglones con monto donde prorratearlos.</div>` : ''}
+    <div class="flex justify-end mb-2"><label class="flex items-center gap-2 text-xs text-neutral-600"><input type="checkbox" class="accent-[#572364]" data-ui="execAll" ${ui.execAll ? 'checked' : ''}> Mostrar todos los renglones</label></div>
+
+    <div class="card overflow-hidden mb-4">
+      <div class="px-4 py-3 border-b border-neutral-200"><h2 class="font-bold">Composición del costo</h2>
+        <p class="text-xs text-neutral-500">Desglose interno: monto neto + cada recargo = monto que ve el cliente (diluido).</p></div>
+      <div class="overflow-x-auto scroll-thin"><table class="w-full text-sm min-w-[860px]">
+        <thead><tr class="border-b border-neutral-200">
+          <th class="th px-3">Renglón</th><th class="th px-3 text-right">Monto base / neto</th>
+          <th class="th px-3 text-right">${pctLbl('Aum. honorarios', v.honExtra)}</th><th class="th px-3 text-right">${pctLbl('Markup global', v.markup)}</th>
+          <th class="th px-3 text-right">${pctLbl('Agencia', v.agency)}</th><th class="th px-3 text-right">Extras<br><span class="normal-case font-normal">(prorrateo)</span></th>
+          <th class="th px-3 text-right">Total cliente</th></tr></thead>
+        <tbody>${compRows || empty}</tbody>
+        <tbody class="border-t-2 border-neutral-400 font-bold"><tr>
+          <td class="px-3 py-2">TOTAL</td><td class="px-3 py-2 text-right tabular-nums">${fmt(c.net)}</td><td class="px-3 py-2 text-right tabular-nums">${fmt(c.hon)}</td>
+          <td class="px-3 py-2 text-right tabular-nums">${fmt(c.mk)}</td><td class="px-3 py-2 text-right tabular-nums">${fmt(c.ag)}</td>
+          <td class="px-3 py-2 text-right tabular-nums">${fmt(c.ex + c.unallocated)}</td><td class="px-3 py-2 text-right tabular-nums">${fmt(c.subtotal)}</td></tr></tbody>
+      </table></div>
+    </div>
+
     <div class="card overflow-hidden">
-      <div class="px-4 py-3 border-b">
-        <h2 class="font-bold">Ejecutable · Control de gastos</h2>
-        <p class="text-xs text-slate-500">Registra lo gastado en cada ítem. Varianza = presupuestado − real (positivo = ahorro).</p>
-      </div>
-      <div class="overflow-x-auto scroll-thin">
-        <table class="w-full text-sm min-w-[680px]">
-          <thead><tr class="border-b">
-            <th class="th px-3">Ítem</th><th class="th px-3 text-right">Presupuestado</th><th class="th px-3 text-right w-40">Real (${CUR[state.view].sym})</th>
-            <th class="th px-3 text-right">Ejec.</th><th class="th px-3 text-right">Varianza</th>
-          </tr></thead>
-          <tbody>${blocks}</tbody>
-          <tbody class="border-t-2 border-slate-300 font-bold">
-            <tr><td class="px-3 py-2">TOTAL</td>
-              <td class="px-3 py-2 text-right tabular-nums" data-ej="b-all">${o['b-all']}</td>
-              <td class="px-3 py-2 text-right tabular-nums" data-ej="r-all">${o['r-all']}</td><td></td>
-              <td class="px-3 py-2 text-right" data-ej="v-all">${o['v-all']}</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="px-4 py-3 border-t text-sm flex flex-wrap justify-between gap-2 bg-slate-50">
-        <span>Base facturada (sin impuestos): <b data-ej="base">${o['base']}</b></span>
-        <span>Utilidad real estimada (base − gasto real): <b data-ej="margin">${o['margin']}</b></span>
-      </div>
+      <div class="px-4 py-3 border-b border-neutral-200"><h2 class="font-bold">Control de gastos · tasa de pago real por renglón</h2>
+        <p class="text-xs text-neutral-500">Registra lo pagado en su moneda y la tasa a la que se pagó. El costo real se convierte con esa tasa y se compara contra el neto en ${CUR[state.view].label}.</p></div>
+      <div class="overflow-x-auto scroll-thin"><table class="w-full text-sm min-w-[980px]">
+        <thead><tr class="border-b border-neutral-200">
+          <th class="th px-3">Renglón</th><th class="th px-3 text-right">Neto presup.</th><th class="th px-2 w-32">Monto pagado</th>
+          <th class="th px-2 w-24">Moneda</th><th class="th px-2">Tasa de pago real</th><th class="th px-3 text-right">Costo real (${CUR[state.view].sym})</th>
+          <th class="th px-3 text-right">Ahorro / Sobregiro</th></tr></thead>
+        <tbody>${payRows || empty}</tbody>
+        <tbody class="border-t-2 border-neutral-400 font-bold"><tr><td class="px-3 py-2" colspan="5">TOTAL</td>
+          <td class="px-3 py-2 text-right tabular-nums" data-ej="real">${o.real}</td><td class="px-3 py-2 text-right" data-ej="var">${o.var}</td></tr></tbody>
+      </table></div>
     </div>`;
 }
 
-/* ---------------------------------------------------------------
-   7. CICLO DE RENDER / ACTUALIZACIÓN
-   --------------------------------------------------------------- */
-/** Render completo (cambio de moneda, carga de presupuesto, alta/baja de ítems) */
+/* -------------------------------------------------------------------------
+   7. CICLO DE RENDER
+   ------------------------------------------------------------------------- */
+function renderTab() {
+  const el = $('#tabContent');
+  if (activeTab === 'sumario') el.innerHTML = SummaryTab();
+  else if (activeTab === 'prepro') el.innerHTML = CategoryToolbar() + CategoryTable('preprod') + CategoryTable('prod');
+  else if (activeTab === 'hon') el.innerHTML = CategoryToolbar() + CategoryTable('hon');
+  else if (activeTab === 'post') el.innerHTML = CategoryToolbar() + CategoryTable('post');
+  else if (activeTab === 'ejecutable') el.innerHTML = ExecTab();
+}
+
+/** Render completo */
 function render() {
-  renderCurrencySwitch(); renderTotalsBar(); renderMeta(); renderVars(); renderRates(); renderTabs(); renderTab();
+  CurrencySwitch(); TotalsBar(); MetaCard(); VarsPanel(); RatesPanel(); Tabs(); renderTab(); updateImportMode();
   autosave();
 }
 
-/**
- * Actualización ligera mientras el usuario escribe: recalcula y actualiza solo
- * celdas calculadas, para no perder el foco del input que se está editando.
- */
+/** Actualización ligera mientras se escribe (no re-renderiza inputs para no perder el foco) */
 function updateComputed() {
-  renderTotalsBar();
-  if (activeTab === 'sumario') renderTab();
+  TotalsBar();
   const c = calc();
-  document.querySelectorAll('[data-sub]').forEach(el => { const i = findItem(el.dataset.sub); if (i) el.textContent = fmt(itemTotal(i)); });
-  document.querySelectorAll('[data-cattotal]').forEach(el => el.textContent = fmt(c.cat[el.dataset.cattotal]));
-  const pp = document.querySelector('[data-prepro-total]'); if (pp) pp.textContent = fmt(c.cat.preprod + c.cat.prod);
-  if (activeTab === 'ejecutable') {
-    const o = ejValues();
-    document.querySelectorAll('[data-ej]').forEach(el => { if (o[el.dataset.ej] !== undefined) el.innerHTML = o[el.dataset.ej]; });
-  }
+  if (activeTab === 'sumario') renderTab();
+  $$('[data-net]').forEach(el => { const r = c.byId[el.dataset.net]; if (r) el.textContent = fmt(r.net); });
+  $$('[data-cl]').forEach(el => { const r = c.byId[el.dataset.cl]; if (r) el.innerHTML = r.client > EPS ? fmt(r.client) : '<span class="badge bg-neutral-200 text-neutral-500">Oculto</span>'; });
+  $$('[data-catnet]').forEach(el => el.textContent = fmt(c.cat[el.dataset.catnet].net));
+  $$('[data-catcl]').forEach(el => el.textContent = fmt(c.cat[el.dataset.catcl].client));
+  if (activeTab === 'ejecutable') { const o = execValues(); $$('[data-ej]').forEach(el => { if (o[el.dataset.ej] !== undefined) el.innerHTML = o[el.dataset.ej]; }); }
   autosave();
 }
 
 let saveTimer;
 function autosave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { try { localStorage.setItem(LS_CURRENT, JSON.stringify(state)); } catch (e) { /* cuota llena */ } }, 300);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(LS_CURRENT, JSON.stringify(state)); } catch (e) {} }, 300);
 }
 
-function toast(msg, ms = 2400) {
+function toast(msg, ms = 2600) {
   const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms);
 }
 
-/* ---------------------------------------------------------------
-   8. GESTIÓN DE ÍTEMS
-   --------------------------------------------------------------- */
-function addItem(cat, name = '', qty = 1, days = 1, unitUSD = 0, focus = true) {
-  const it = newItem(cat, name, qty, days, unitUSD);
-  state.items.push(it);
-  return it;
-}
-function deleteItem(id) {
-  state.items = state.items.filter(i => i.id !== id);
-}
-
-/* ---------------------------------------------------------------
-   9. HISTORIAL / VERSIONAMIENTO (localStorage)
-   --------------------------------------------------------------- */
-function loadDB() { try { return JSON.parse(localStorage.getItem(LS_DB)) || []; } catch { return []; } }
+/* -------------------------------------------------------------------------
+   8. HISTORIAL (localStorage, máx. 100)
+   ------------------------------------------------------------------------- */
+const loadDB = () => { try { return JSON.parse(localStorage.getItem(LS_DB)) || []; } catch { return []; } };
 function storeDB(db) {
   try { localStorage.setItem(LS_DB, JSON.stringify(db)); return true; }
-  catch (e) { toast('No hay espacio en el almacenamiento local.'); return false; }
+  catch { toast('Almacenamiento local lleno.'); return false; }
 }
 
-/** Guarda (o actualiza) el presupuesto activo en la base local */
-function saveBudget() {
+function saveBudget({ silent = false } = {}) {
   const db = loadDB();
-  const copy = JSON.parse(JSON.stringify(state));
-  copy.savedAt = new Date().toISOString();
+  const copy = clone(state); copy.savedAt = new Date().toISOString();
   const idx = db.findIndex(b => b.id === copy.id);
   if (idx >= 0) db[idx] = copy;
   else {
     if (db.length >= MAX_BUDGETS) {
-      if (!confirm(`Llegaste al límite de ${MAX_BUDGETS} presupuestos. ¿Eliminar el más antiguo para guardar este?`)) return false;
       db.sort((a, b) => (a.savedAt || '').localeCompare(b.savedAt || '')).shift();
+      toast(`Límite de ${MAX_BUDGETS}: se eliminó el presupuesto más antiguo.`);
     }
     db.push(copy);
   }
   if (!storeDB(db)) return false;
   state.savedAt = copy.savedAt;
-  autosave();
-  toast('Presupuesto guardado en el historial');
-  if (!$('#historyDrawer').classList.contains('translate-x-full')) renderHistory();
+  MetaCard(); HistoryList(); autosave();
+  if (!silent) toast('Presupuesto guardado');
   return true;
 }
 
-/** "V1" → "V2", "Versión 3" → "Versión 4", "Final" → "Final (copia)" */
 function bumpVersion(v) {
-  const s = (v || 'V1').toString();
-  const m = s.match(/(\d+)(?!.*\d)/);
+  const s = (v || 'V1').toString(), m = s.match(/(\d+)(?!.*\d)/);
   return m ? s.slice(0, m.index) + (+m[1] + 1) + s.slice(m.index + m[1].length) : s + ' (copia)';
 }
 
-function renderHistory() {
+function HistoryList() {
   const db = loadDB().sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
   const f = norm($('#histFilter').value);
-  const list = db.filter(b => !f || norm([b.meta.cliente, b.meta.proyecto, b.meta.agencia, b.meta.version].join(' ')).includes(f));
-  $('#histCount').textContent = `${db.length} / ${MAX_BUDGETS} guardados`;
+  const list = db.filter(b => !f || norm(Object.values(b.meta || {}).join(' ')).includes(f));
+  $('#histCount').textContent = `${db.length} / ${MAX_BUDGETS} presupuestos`;
   $('#histList').innerHTML = list.length ? list.map(b => {
-    const c = calc(hydrate(b)), cur = b.id === state.id;
-    return `
-      <div class="rounded-xl border ${cur ? 'border-indigo-400 bg-indigo-50/50' : 'border-slate-200'} p-3">
-        <div class="flex justify-between gap-2">
-          <div class="min-w-0">
-            <div class="font-semibold truncate">${esc(b.meta.proyecto || 'Sin título')}</div>
-            <div class="text-xs text-slate-500 truncate">${esc(b.meta.cliente || 'Sin cliente')} · ${esc(b.meta.agencia || '—')}</div>
-          </div>
-          <span class="shrink-0 h-fit text-[11px] font-semibold rounded-full bg-slate-900 text-white px-2 py-0.5">${esc(b.meta.version)}</span>
+    const total = calc(hydrate(b)).total, cur = b.id === state.id;
+    return `<div class="rounded-xl border ${cur ? 'border-accent ring-1 ring-accent/30' : 'border-neutral-200'} p-3">
+      <div class="flex justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-semibold truncate">${esc(b.meta.proyecto || 'Sin título')}</div>
+          <div class="text-xs text-neutral-500 truncate">${esc(b.meta.cliente || 'Sin cliente')}${b.meta.cotizacion ? ' · ' + esc(b.meta.cotizacion) : ''}</div>
         </div>
-        <div class="mt-1 flex justify-between text-xs text-slate-500">
-          <span>${b.savedAt ? new Date(b.savedAt).toLocaleString('es-VE') : ''}</span>
-          <span class="font-semibold text-slate-700">$ ${NF.format(c.total)}</span>
-        </div>
-        <div class="mt-2 flex gap-2">
-          <button class="btn-light !py-1 flex-1" data-action="load" data-id="${b.id}">${cur ? 'Abierto' : 'Cargar'}</button>
-          <button class="btn-light !py-1 flex-1" data-action="dup" data-id="${b.id}">Duplicar</button>
-          <button class="btn-light !py-1 text-rose-600" data-action="del-budget" data-id="${b.id}">Eliminar</button>
-        </div>
-      </div>`;
-  }).join('') : `<p class="text-center text-sm text-slate-400 py-10">${db.length ? 'Sin resultados para el filtro.' : 'Aún no has guardado presupuestos.'}</p>`;
+        <span class="badge h-fit ${cur ? 'bg-accent text-white' : 'bg-neutral-900 text-white'}">${esc(b.meta.version || 'V1')}</span>
+      </div>
+      <div class="mt-1 flex justify-between text-[11px] text-neutral-500">
+        <span>${b.savedAt ? new Date(b.savedAt).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' }) : ''}</span>
+        <span class="font-semibold text-neutral-800">$ ${NF.format(total)}</span>
+      </div>
+      <div class="mt-2 grid grid-cols-3 gap-1.5">
+        <button class="btn-ghost !py-1 !text-xs" data-action="load" data-id="${b.id}" ${cur ? 'disabled' : ''}>${cur ? 'Abierto' : 'Cargar'}</button>
+        <button class="btn-ghost !py-1 !text-xs" data-action="dup" data-id="${b.id}">Duplicar</button>
+        <button class="btn-ghost !py-1 !text-xs !text-red-600" data-action="del-budget" data-id="${b.id}">Eliminar</button>
+      </div></div>`;
+  }).join('') : `<p class="text-center text-sm text-neutral-400 py-10">${db.length ? 'Sin resultados.' : 'Aún no hay presupuestos guardados.'}</p>`;
 }
 
-function openHistory(open) {
-  $('#historyDrawer').classList.toggle('translate-x-full', !open);
-  $('#drawerOverlay').classList.toggle('hidden', !open);
-  if (open) renderHistory();
+function sidebar(open) {
+  $('#sidebar').classList.toggle('-translate-x-full', !open);
+  $('#sidebarOverlay').classList.toggle('hidden', !open);
 }
 
-/* ---------------------------------------------------------------
-   10. IMPORTACIÓN DE TEXTO (Data Parsing)
-   --------------------------------------------------------------- */
-// Palabras clave para clasificar automáticamente cuando no hay encabezado
-const CAT_KEYWORDS = {
-  post:    ['post', 'edicion', 'editor', 'montaje', 'color', 'retoque', 'animacion', 'motion', 'vfx', 'musica', 'sonoro', 'mezcla', 'subtitul', 'locucion', '3d'],
-  hon:     ['honorario', 'fee', 'director', 'dp', 'fotografo', 'productor', 'asistente', 'gaffer', 'maquill', 'estilista', 'vestuar', 'camarografo', 'sonidista', 'script', 'continuista'],
-  preprod: ['pre-produccion', 'preproduccion', 'scouting', 'scout', 'casting', 'storyboard', 'guion', 'ppm', 'permiso', 'reunion'],
-};
+/* -------------------------------------------------------------------------
+   9. MODAL Y CONTROLES DE SISTEMA
+   ------------------------------------------------------------------------- */
+let modalCb = null;
+function openModal({ title, html, confirmText = 'Aceptar', cancelText = 'Cancelar', danger = false, wide = false, onConfirm = null }) {
+  $('#modalTitle').textContent = title;
+  $('#modalBody').innerHTML = html;
+  $('#modalBox').className = `bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-3xl' : 'max-w-md'} max-h-[90vh] flex flex-col`;
+  const ok = $('#modalConfirm');
+  ok.textContent = confirmText; ok.className = danger ? 'btn-danger-solid' : 'btn-accent';
+  ok.classList.toggle('hidden', !onConfirm);
+  $('#modalCancel').textContent = onConfirm ? cancelText : 'Cerrar';
+  modalCb = onConfirm;
+  $('#modal').classList.remove('hidden'); $('#modal').classList.add('flex');
+}
+function closeModal() { $('#modal').classList.add('hidden'); $('#modal').classList.remove('flex'); modalCb = null; }
 
-/** Detecta si un texto corto es un encabezado de categoría (ej: "POST PRODUCCIÓN") */
+/** Botón DESCARTAR: modal de advertencia obligatorio */
+function askDiscard() {
+  openModal({
+    title: 'Descartar presupuesto',
+    html: `<p class="text-base text-neutral-900 font-medium">¿Estás segura de que deseas descartar todos los cambios actuales?</p>
+           <p class="mt-2 text-xs text-neutral-500">${isSaved() ? 'Se restaurará la última versión guardada en el historial.' : 'Este presupuesto no está guardado: se reiniciará desde el JSON base.'}</p>`,
+    confirmText: 'Sí, descartar', danger: true,
+    onConfirm: discardChanges,
+  });
+}
+const isSaved = () => loadDB().some(b => b.id === state.id);
+function discardChanges() {
+  const saved = loadDB().find(b => b.id === state.id);
+  state = saved ? hydrate(clone(saved)) : fromBase();
+  chat.pending = null;
+  render(); toast('Cambios descartados');
+}
+
+function askNew() {
+  openModal({
+    title: 'Nuevo presupuesto',
+    html: '<p>Se creará un presupuesto nuevo desde el JSON base (todos los renglones en 0). Los cambios no guardados del actual se perderán.</p>',
+    confirmText: 'Crear nuevo', onConfirm: () => { state = fromBase(); activeTab = 'prepro'; render(); toast('Nuevo presupuesto creado'); sidebar(false); },
+  });
+}
+
+/* -------------------------------------------------------------------------
+   10. IMPORTACIÓN INTELIGENTE
+   ------------------------------------------------------------------------- */
+/** Extrae texto de un PDF con pdf.js, reconstruyendo líneas por coordenada Y */
+async function extractPdfText(file) {
+  if (!window.pdfjsLib) throw new Error('pdf.js no está disponible (¿sin internet?)');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  let out = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    let lastY = null, line = '';
+    for (const it of tc.items) {
+      const y = Math.round(it.transform[5]);
+      if (lastY !== null && Math.abs(y - lastY) > 2) { out += line.trim() + '\n'; line = ''; }
+      line += it.str + ' '; lastY = y;
+    }
+    out += line.trim() + '\n\n';
+  }
+  return out.trim();
+}
+
+/** Detecta encabezados de categoría ("POST PRODUCCIÓN:", "Honorarios") */
 function headerCat(txt) {
   const t = norm(txt).trim();
   if (/^post/.test(t)) return 'post';
@@ -836,489 +962,497 @@ function headerCat(txt) {
   return null;
 }
 
-/** Clasifica un ítem por palabras clave en su nombre */
-function autoCat(name) {
-  const t = ' ' + norm(name).replace(/[^a-z0-9-]+/g, ' ') + ' ';
-  for (const cat of ['post', 'hon', 'preprod']) {
-    if (CAT_KEYWORDS[cat].some(k => k.length <= 3 ? t.includes(' ' + k + ' ') : t.includes(k))) return cat;
-  }
-  return 'prod';
-}
-
 /**
- * Analiza una línea de texto y devuelve { name, cat, qty, days, unit(USD) },
- * { header: cat } si es un encabezado, o null si está vacía.
- * Reglas: número seguido de "días/jornadas" = días; seguido de "x/pax/und/personas" = cantidad;
- * precedido de $/Bs/€ = precio. Los demás se asignan como: último = precio, luego cantidad, luego días.
+ * Analiza una línea suelta (formal o de WhatsApp) → { text, cat, qty, days, unit_usd|null } o { header }.
+ * Número + "días/jornadas" = días; + "pax/personas/und" = cantidad; con $/Bs/€ = precio.
  */
 function parseLine(line, currentCat) {
-  let s = line.replace(/^\s*([-*•·]|\d+[.)])\s+/, '').trim();
+  let s = line
+    .replace(/^\[[^\]]{4,30}\]\s*[^:]{1,40}:\s*/, '')                                               // [12/11 10:03] Isa:
+    .replace(/^\d{1,2}\/\d{1,2}\/\d{2,4},?\s+\d{1,2}:\d{2}(?:\s?[ap]\.?\s?m\.?)?\s*-\s*[^:]{1,40}:\s*/i, '') // 12/11/26, 10:03 - Isa:
+    .replace(/^\s*([-*•·>]|\d+[.)])\s+/, '').trim();
   if (!s) return null;
-
   let cat = null;
   const pm = s.match(/^([^:\d]{2,40}):\s*(.*)$/);
-  if (pm) {
-    const hc = headerCat(pm[1]);
-    if (hc) { if (!pm[2].trim()) return { header: hc }; cat = hc; s = pm[2].trim(); } // "PRODUCCIÓN:" solo = encabezado
-  }
-  if (!/\d/.test(s)) {
-    const hc = headerCat(s.replace(/[:\-–]+$/, ''));
-    if (hc && s.length < 40) return { header: hc };
-    if (!s) return null;
-  }
+  if (pm) { const hc = headerCat(pm[1]); if (hc) { if (!pm[2].trim()) return { header: hc }; cat = hc; s = pm[2].trim(); } }
+  if (!/\d/.test(s)) { const hc = headerCat(s.replace(/[:\-–]+$/, '')); if (hc && s.length < 40) return { header: hc }; }
 
   const ns = norm(s);
   let cur = state.view;
-  if (/\bbs\b|bs\.|bolivar/.test(ns)) cur = 'VES';
-  else if (/€|\beur\b|euro/.test(ns)) cur = 'EUR';
-  else if (/\$|\busd\b|dolar/.test(ns)) cur = 'USD';
+  if (/\bbs\b|bs\.|bolivar/.test(ns)) cur = 'VES'; else if (/€|\beur\b|euro/.test(ns)) cur = 'EUR'; else if (/\$|\busd\b|dolar/.test(ns)) cur = 'USD';
 
   const toks = []; const re = /\d[\d.,]*/g; let m;
   while ((m = re.exec(s))) {
     const end = m.index + m[0].length;
-    toks.push({ v: parseNum(m[0]), idx: m.index, after: norm(s.slice(end, end + 14)), before: norm(s.slice(Math.max(0, m.index - 5), m.index)), used: false });
+    toks.push({ v: parseNum(m[0]), after: norm(s.slice(end, end + 14)), before: norm(s.slice(Math.max(0, m.index - 5), m.index)), used: false });
   }
-
   let qty = null, days = null, unit = null;
-  toks.forEach(t => {
+  toks.forEach((t, k) => {
     if (/^\s*(dias?\b|jornadas?|d\b)/.test(t.after)) { days = t.v; t.used = true; }
-    else if (/^\s*(pax|und|unid|uds|pers|personas|piezas|imagenes|fotos)/.test(t.after)) { qty = t.v; t.used = true; }
-    else if (/(\$|bs\.?|€|usd|eur)\s*$/.test(t.before) || /^\s*(\$|usd|bs|€|eur)/.test(t.after)) { unit = t.v; t.used = true; }
-    else if (/^\s*[x×*]/.test(t.after) && t !== toks[toks.length - 1]) {
-      if (qty === null) qty = t.v; else if (days === null) days = t.v; else return;
-      t.used = true;
-    }
+    else if (/^\s*(pax|und|unid|uds|pers|personas|piezas|imagenes|fotos|artes)/.test(t.after)) { qty = t.v; t.used = true; }
+    else if (/(\$|bs\.?|€|usd|eur)\s*$/.test(t.before) || /^\s*(\$|usd|bs|€|eur|dolares|bolivares)/.test(t.after)) { unit = t.v; t.used = true; }
+    else if (/^\s*[x×*]/.test(t.after) && k < toks.length - 1) { if (qty === null) qty = t.v; else if (days === null) days = t.v; t.used = true; }
   });
   const free = toks.filter(t => !t.used).map(t => t.v);
   if (unit === null && free.length) unit = free.pop();
   if (qty === null && free.length) qty = free.shift();
   if (days === null && free.length) days = free.shift();
+  return { text: s, cat: cat || currentCat, qty, days, unit_usd: unit === null ? null : round2(fromView(unit, cur)) };
+}
 
-  let name = (toks.length ? s.slice(0, toks[0].idx) : s)
-    .replace(/(\$|us\$|usd|bs\.?|€|eur)\s*$/i, '')
-    .replace(/[\s:\-–=,(]+$/, '').trim() || 'Ítem importado';
+/** Modo local (sin API): coincidencia difusa contra los renglones existentes */
+function localImport(text) {
+  let current = null; const map = {}, unmatched = [];
+  text.split(/\r?\n|;/).forEach(line => {
+    const p = parseLine(line, current);
+    if (!p) return;
+    if (p.header) { current = p.header; return; }
+    const matchText = p.text.replace(/\d[\d.,]*/g, ' ');
+    const candidates = p.cat ? state.items.filter(i => i.cat === p.cat) : state.items;
+    const it = bestItemMatch(matchText, { items: candidates }) || bestItemMatch(matchText);
+    if (it) {
+      const prev = map[it.id];
+      map[it.id] = { qty: p.qty ?? prev?.qty ?? null, days: p.days ?? prev?.days ?? null, unit_usd: p.unit_usd ?? prev?.unit_usd ?? null, evidence: p.text };
+    } else if (/[a-z]{3,}/i.test(p.text) && p.text.length > 3) unmatched.push(p.text);
+  });
+  return { map, unmatched, mode: 'local' };
+}
 
+/** Modo IA: el LLM solo puede usar los ids existentes */
+async function llmImport(text) {
+  const list = state.items.map(i => ({ id: i.id, categoria: CATS[i.cat].label, renglon: i.name }));
+  const system = `Eres un analista experto en presupuestos de producción audiovisual. Recibirás un texto desestructurado (brief formal, cotización, PDF o mensajes de WhatsApp desordenados) y la LISTA CERRADA de renglones del presupuesto.
+Tu tarea: mapear lo que pide el texto a esos renglones.
+REGLAS ESTRICTAS:
+1. Usa ÚNICAMENTE los "id" de la lista. Nunca crees renglones, etiquetas o ids nuevos y nunca renombres ni reemplaces los existentes.
+2. Clasifica cada requerimiento en el renglón existente más adecuado (Pre-producción, Producción, Honorarios o Post-producción). Si varios conceptos caen en el mismo renglón, consolídalos.
+3. Para cada renglón detectado devuelve qty (cantidad), days (días) y unit_usd (precio unitario NETO en USD). Convierte: 1 USD = ${rateFor('VES')} Bs y 1 USD = ${rateFor('EUR')} €. Si el texto no da precio, unit_usd = null. Si no da cantidad o días, usa 1.
+4. NO incluyas renglones que el texto no menciona: la aplicación los dejará en 0 para edición manual.
+5. Lo que no encaje en ningún renglón va en "unmatched" (frases breves).
+Responde SOLO con JSON: {"items":[{"id":"...","qty":1,"days":1,"unit_usd":null,"evidence":"fragmento del texto"}],"unmatched":["..."]}`;
+  const msg = await callLLM({
+    response_format: { type: 'json_object' },
+    messages: [{ role: 'system', content: system }, { role: 'user', content: `RENGLONES:\n${JSON.stringify(list)}\n\nTEXTO:\n${text.slice(0, 15000)}` }],
+  });
+  const data = JSON.parse(msg.content || '{}');
+  const map = {};
+  (data.items || []).forEach(m => { if (findItem(m.id)) map[m.id] = { qty: m.qty ?? null, days: m.days ?? null, unit_usd: m.unit_usd ?? null, evidence: m.evidence || '' }; });
+  return { map, unmatched: Array.isArray(data.unmatched) ? data.unmatched : [], mode: 'IA' };
+}
+
+async function runImport() {
+  const text = $('#importText').value.trim();
+  if (!text) return toast('Pega un texto o sube un PDF primero.');
+  const btn = $('#importBtn'); btn.disabled = true; btn.textContent = 'Procesando…';
+  let res;
+  try { res = getAI().key ? await llmImport(text) : localImport(text); }
+  catch (e) { toast('IA no disponible: ' + e.message + '. Se usó el modo local.', 4000); res = localImport(text); }
+  finally { btn.disabled = false; btn.textContent = 'Procesar'; }
+  previewImport(res);
+}
+
+function previewImport(res) {
+  const detected = state.items.filter(i => res.map[i.id]);
+  const zeroed = state.items.filter(i => !res.map[i.id] && itemNet(i) > EPS);
+  if (!detected.length) {
+    return openModal({ title: 'Sin coincidencias', html: `<p>No se pudo asignar el texto a ningún renglón existente.</p>${res.unmatched.length ? `<p class="mt-2 text-xs">No clasificado: ${res.unmatched.map(esc).join(' · ')}</p>` : ''}` });
+  }
+  const rows = detected.map(i => {
+    const m = res.map[i.id];
+    const u = m.unit_usd ?? i.unit;
+    return `<tr class="border-b border-neutral-100">
+      <td class="py-1.5 pr-2"><div class="font-medium">${esc(i.name)}</div><div class="text-[10px] text-neutral-500">${CATS[i.cat].label}</div></td>
+      <td class="py-1.5 px-2 text-right whitespace-nowrap tabular-nums">${m.qty ?? i.qty} × ${m.days ?? i.days} × ${fmt(u)}${m.unit_usd == null ? '<div class="text-[10px] text-neutral-400">precio actual</div>' : ''}</td>
+      <td class="py-1.5 pl-2 text-[11px] text-neutral-500">${esc(m.evidence)}</td></tr>`;
+  }).join('');
+  openModal({
+    title: `Vista previa de importación (${res.mode === 'IA' ? 'IA' : 'modo local'})`, wide: true,
+    html: `<p class="mb-2"><b>${detected.length}</b> renglones detectados. Todo lo demás quedará en <b>0</b>${zeroed.length ? ` (incluye ${zeroed.length} renglón(es) que hoy tienen monto)` : ''}. No se crean ni renombran renglones.</p>
+      <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b"><th class="th !px-0">Renglón</th><th class="th text-right">Cant × Días × Unit.</th><th class="th">Evidencia</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${res.unmatched.length ? `<div class="mt-3 rounded-lg bg-neutral-100 p-2 text-xs"><b>No clasificado:</b> ${res.unmatched.slice(0, 15).map(esc).join(' · ')}</div>` : ''}`,
+    confirmText: 'Aplicar al presupuesto',
+    onConfirm: () => applyImport(res),
+  });
+}
+
+function applyImport(res) {
+  state.items.forEach(i => {
+    const m = res.map[i.id];
+    if (m) {
+      if (m.qty != null) i.qty = +m.qty || 1;
+      if (m.days != null) i.days = +m.days || 1;
+      if (m.unit_usd != null) i.unit = +m.unit_usd || 0;
+    } else {
+      i.unit = 0; // Regla de mapeo: lo no mencionado queda en cero
+    }
+  });
+  render(); toast(`Importación aplicada: ${Object.keys(res.map).length} renglones`);
+}
+
+function updateImportMode() {
+  const el = $('#importMode'); if (el) el.textContent = getAI().key ? 'Modo IA activo' : 'Modo local (sin API Key)';
+}
+
+/* -------------------------------------------------------------------------
+   11. SERVICIO LLM (OpenAI o compatible). La API Key se guarda solo en este navegador.
+   ------------------------------------------------------------------------- */
+function getAI() { try { return JSON.parse(localStorage.getItem(LS_AI)) || {}; } catch { return {}; } }
+
+async function callLLM(body) {
+  const ai = getAI();
+  if (!ai.key) throw new Error('Falta la API Key');
+  const res = await fetch(ai.endpoint || DEFAULT_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ai.key },
+    body: JSON.stringify({ model: ai.model || DEFAULT_MODEL, temperature: 0.2, ...body }),
+  });
+  if (!res.ok) { let t = ''; try { t = (await res.json()).error?.message || ''; } catch {} throw new Error(`HTTP ${res.status} ${t}`); }
+  return (await res.json()).choices[0].message;
+}
+
+function openAISettings() {
+  const ai = getAI();
+  openModal({
+    title: 'Configuración de IA',
+    html: `<p class="text-xs text-neutral-500 mb-3">Sin API Key, el chat y la importación funcionan con un intérprete local. Con una clave de OpenAI (u otro endpoint compatible) entienden lenguaje libre. La clave queda guardada solo en este navegador: no la uses en un equipo compartido ni publiques la app con ella.</p>
+      <label class="block mb-2"><span class="text-xs text-neutral-500">API Key</span><input id="aiKey" type="password" class="inp" value="${esc(ai.key || '')}" placeholder="sk-..."></label>
+      <label class="block mb-2"><span class="text-xs text-neutral-500">Modelo</span><input id="aiModel" class="inp" value="${esc(ai.model || '')}" placeholder="${DEFAULT_MODEL}"></label>
+      <label class="block"><span class="text-xs text-neutral-500">Endpoint</span><input id="aiEndpoint" class="inp" value="${esc(ai.endpoint || '')}" placeholder="${DEFAULT_ENDPOINT}"></label>
+      ${ai.key ? '<button class="mt-3 text-xs text-red-600 underline" data-action="ai-clear">Borrar clave guardada</button>' : ''}`,
+    confirmText: 'Guardar',
+    onConfirm: () => {
+      localStorage.setItem(LS_AI, JSON.stringify({ key: $('#aiKey').value.trim(), model: $('#aiModel').value.trim(), endpoint: $('#aiEndpoint').value.trim() }));
+      updateChatMode(); updateImportMode(); toast('Configuración de IA guardada');
+    },
+  });
+}
+
+/* -------------------------------------------------------------------------
+   12. CHATBOT CON FUNCTION CALLING
+   El modelo recibe el JSON del presupuesto y devuelve "tool_calls". El mismo
+   ejecutor procesa las llamadas del LLM y las del intérprete local.
+   ------------------------------------------------------------------------- */
+const CHAT_TOOLS = [
+  { type: 'function', function: { name: 'update_item', description: 'Modifica un renglón existente (nombre, cantidad, días, unitario neto USD) o suma cantidades/días/montos.',
+    parameters: { type: 'object', properties: { item_id: { type: 'string' }, name: { type: 'string' }, qty: { type: 'number' }, days: { type: 'number' }, unit_usd: { type: 'number' },
+      add_qty: { type: 'number' }, add_days: { type: 'number' }, add_amount_usd: { type: 'number', description: 'Suma este monto neto al subtotal del renglón' } }, required: ['item_id'] } } },
+  { type: 'function', function: { name: 'add_item', description: 'Agrega un renglón nuevo a una categoría (solo si el usuario lo pide explícitamente).',
+    parameters: { type: 'object', properties: { category: { type: 'string', enum: CAT_ORDER }, name: { type: 'string' }, qty: { type: 'number' }, days: { type: 'number' }, unit_usd: { type: 'number' } }, required: ['category', 'name'] } } },
+  { type: 'function', function: { name: 'delete_item', description: 'Elimina un renglón (destructivo).', parameters: { type: 'object', properties: { item_id: { type: 'string' } }, required: ['item_id'] } } },
+  { type: 'function', function: { name: 'set_global_var', description: 'Cambia una variable global. Porcentajes como número (20 = 20%). extras en USD.',
+    parameters: { type: 'object', properties: { key: { type: 'string', enum: Object.keys(VAR_DEFS) }, value: { type: 'number' } }, required: ['key', 'value'] } } },
+  { type: 'function', function: { name: 'set_meta', description: 'Cambia un metadato del presupuesto.',
+    parameters: { type: 'object', properties: { field: { type: 'string', enum: META_FIELDS.map(f => f.k) }, value: { type: 'string' } }, required: ['field', 'value'] } } },
+  { type: 'function', function: { name: 'set_currency', description: 'Cambia la moneda de visualización.', parameters: { type: 'object', properties: { currency: { type: 'string', enum: ['VES', 'USD', 'EUR'] } }, required: ['currency'] } } },
+  { type: 'function', function: { name: 'set_project_rate', description: 'Cambia valor/etiqueta de una tasa del proyecto o la marca como activa.',
+    parameters: { type: 'object', properties: { rate_id: { type: 'string' }, value: { type: 'number' }, label: { type: 'string' }, make_active: { type: 'boolean' } }, required: ['rate_id'] } } },
+  { type: 'function', function: { name: 'export_pdf', description: 'Descarga el PDF del Sumario.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'save_budget', description: 'Guarda el presupuesto en el historial.', parameters: { type: 'object', properties: {} } } },
+  { type: 'function', function: { name: 'show_summary', description: 'Muestra un resumen de totales en el chat.', parameters: { type: 'object', properties: {} } } },
+];
+
+/** Resuelve un renglón por id exacto o por nombre aproximado */
+function resolveItem(ref) {
+  if (!ref) return null;
+  return findItem(ref) || state.items.find(i => norm(i.name) === norm(ref)) || bestItemMatch(ref, { min: 0.5 });
+}
+
+/** Ejecutores: cada uno muta el estado y devuelve un texto de resultado */
+const EXECUTORS = {
+  update_item(a) {
+    const it = resolveItem(a.item_id || a.item_name);
+    if (!it) return `✗ No encontré el renglón "${a.item_id || a.item_name}".`;
+    if (a.name != null) it.name = String(a.name);
+    if (a.qty != null) it.qty = +a.qty;
+    if (a.days != null) it.days = +a.days;
+    if (a.unit_usd != null) it.unit = +a.unit_usd;
+    if (a.add_qty) it.qty = (+it.qty || 0) + +a.add_qty;
+    if (a.add_days) it.days = (+it.days || 0) + +a.add_days;
+    if (a.add_amount_usd) {
+      if (!+it.qty) it.qty = 1; if (!+it.days) it.days = 1;
+      it.unit = (+it.unit || 0) + +a.add_amount_usd / (it.qty * it.days);
+    }
+    return `✓ ${it.name}: ${it.qty} × ${it.days} × ${fmt(it.unit)} = ${fmt(itemNet(it))} neto`;
+  },
+  add_item(a) {
+    if (!CATS[a.category]) return '✗ Categoría no válida.';
+    const it = newItem(a.category, a.name || 'Nuevo renglón', +a.qty || 1, +a.days || 1, +a.unit_usd || 0);
+    state.items.push(it);
+    return `✓ Renglón "${it.name}" agregado a ${CATS[a.category].label}`;
+  },
+  delete_item(a) {
+    const it = resolveItem(a.item_id);
+    if (!it) return '✗ No encontré el renglón.';
+    state.items = state.items.filter(i => i !== it);
+    return `✓ Renglón "${it.name}" eliminado`;
+  },
+  set_global_var(a) {
+    if (!VAR_DEFS[a.key]) return '✗ Variable no válida.';
+    state.vars[a.key] = Math.max(0, +a.value || 0);
+    return `✓ ${VAR_DEFS[a.key].label}: ${VAR_DEFS[a.key].pct ? state.vars[a.key] + '%' : fmt(state.vars[a.key])}`;
+  },
+  set_meta(a) {
+    if (!(a.field in state.meta)) return '✗ Campo no válido.';
+    state.meta[a.field] = String(a.value);
+    return `✓ ${META_FIELDS.find(f => f.k === a.field)?.label || a.field}: ${a.value}`;
+  },
+  set_currency(a) { if (!CUR[a.currency]) return '✗ Moneda no válida.'; state.view = a.currency; return `✓ Mostrando en ${CUR[a.currency].label}`; },
+  set_project_rate(a) {
+    const r = state.rates.find(x => x.id === a.rate_id) || state.rates.find(x => norm(x.label).includes(norm(a.rate_id)));
+    if (!r) return '✗ Tasa no encontrada.';
+    if (a.value != null) r.value = +a.value;
+    if (a.label) r.label = a.label;
+    if (a.make_active) state.activeRate[r.cur] = r.id;
+    return `✓ ${r.label}: 1 USD = ${NF.format(r.value)} ${CUR[r.cur].sym}`;
+  },
+  export_pdf() { setTimeout(exportPDF, 250); return '✓ Generando el PDF del Sumario…'; },
+  save_budget() { return saveBudget() ? '✓ Guardado en el historial' : '✗ No se pudo guardar'; },
+  show_summary() {
+    const c = calc();
+    return `**${state.meta.proyecto || 'Presupuesto'} · ${state.meta.version}**\n` +
+      CAT_ORDER.filter(k => c.cat[k].client > EPS).map(k => `• ${CATS[k].label}: ${fmt(c.cat[k].client)} (neto ${fmt(c.cat[k].net)})`).join('\n') +
+      `\n• Subtotal: ${fmt(c.subtotal)}\n• Impuestos: ${fmt(c.tax)}\n**TOTAL: ${fmt(c.total)}**`;
+  },
+};
+
+/** ¿La llamada es destructiva o de gran impacto? → requiere confirmación verbal */
+function destructiveReason(call) {
+  const a = call.args || {};
+  switch (call.name) {
+    case 'delete_item': return 'elimina un renglón';
+    case 'update_item': return [a.qty, a.days, a.unit_usd].some(v => v != null && +v === 0) ? 'deja un renglón en 0' : null;
+    case 'set_global_var': {
+      if (!VAR_DEFS[a.key]?.pct) return null;
+      const cur = +state.vars[a.key] || 0;
+      return (+a.value >= 20 || Math.abs(+a.value - cur) >= 10) ? 'cambio grande de porcentaje' : null;
+    }
+    case 'set_project_rate': {
+      const r = state.rates.find(x => x.id === a.rate_id);
+      return r && a.value != null && r.value && Math.abs(+a.value - r.value) / r.value > 0.2 ? 'cambia la tasa más de 20%' : null;
+    }
+  }
+  return null;
+}
+
+function describeCall(call) {
+  const a = call.args || {}, it = resolveItem(a.item_id || a.item_name);
+  switch (call.name) {
+    case 'update_item': {
+      const parts = [];
+      if (a.name != null) parts.push(`renombrar a "${a.name}"`);
+      if (a.qty != null) parts.push(`cantidad = ${a.qty}`);
+      if (a.days != null) parts.push(`días = ${a.days}`);
+      if (a.unit_usd != null) parts.push(`unitario = ${fmt(a.unit_usd)}`);
+      if (a.add_qty) parts.push(`+${a.add_qty} cantidad`);
+      if (a.add_days) parts.push(`+${a.add_days} días`);
+      if (a.add_amount_usd) parts.push(`+${fmt(a.add_amount_usd)}`);
+      return `${it?.name || a.item_id}: ${parts.join(', ')}`;
+    }
+    case 'add_item': return `Agregar "${a.name}" en ${CATS[a.category]?.label}`;
+    case 'delete_item': return `Eliminar "${it?.name || a.item_id}"`;
+    case 'set_global_var': return VAR_DEFS[a.key]?.pct ? `${VAR_DEFS[a.key].label}: ${state.vars[a.key]}% → ${a.value}%` : `Montos extras → ${fmt(a.value)}`;
+    case 'set_meta': return `${a.field} = "${a.value}"`;
+    case 'set_currency': return `Ver en ${CUR[a.currency]?.label}`;
+    case 'set_project_rate': return `Tasa ${a.rate_id}${a.value != null ? ' → ' + a.value : ''}`;
+    case 'export_pdf': return 'Descargar PDF';
+    case 'save_budget': return 'Guardar';
+    case 'show_summary': return 'Resumen';
+  }
+  return call.name;
+}
+
+function runCalls(calls) {
+  const out = calls.map(c => EXECUTORS[c.name] ? EXECUTORS[c.name](c.args || {}) : `✗ Acción desconocida: ${c.name}`);
+  render(); HistoryList();
+  const changed = calls.some(c => !['show_summary', 'export_pdf', 'save_budget'].includes(c.name));
+  return out.join('\n') + (changed ? `\n\nTotal actualizado: **${fmt(calc().total)}**` : '');
+}
+
+/** Aplica directo o pide confirmación si alguna llamada es destructiva */
+function processCalls(calls, reply) {
+  if (!calls.length) return addMsg('bot', reply || HELP);
+  const risky = calls.map(destructiveReason).filter(Boolean);
+  if (risky.length) {
+    chat.pending = calls;
+    return addMsg('bot', `${reply ? reply + '\n\n' : ''}Cambios propuestos:\n${calls.map(c => '• ' + describeCall(c)).join('\n')}\n\n⚠️ Atención: ${[...new Set(risky)].join(', ')}. ¿Confirmas? (sí / no)`);
+  }
+  addMsg('bot', (reply ? reply + '\n\n' : '') + runCalls(calls));
+}
+
+const HELP = `Puedo modificar el presupuesto en tiempo real. Ejemplos:
+• "Sube el markup a 20%" · "Agencia 12%" · "Aumento de honorarios 15%"
+• "Agrega 3 días de pauta al Fotógrafo"
+• "Añade $500 a Post Producción" · "Agrega 200 a Casting"
+• "Pon la tarifa del Director en 1800"
+• "Renombra Drone a Drone FPV" · "Elimina Seguridad"
+• "Muestra en bolívares" · "Resumen" · "Guardar" · "Descarga el PDF"
+Los cambios destructivos o grandes te los pediré confirmar.`;
+
+/* --- Intérprete local (sin API): traduce frases a las mismas llamadas de función --- */
+function detectVarKey(t) {
+  if (/agencia/.test(t)) return 'agency';
+  if (/impuesto|\biva\b/.test(t)) return 'tax';
+  if (/honorario/.test(t) && /(aumento|extra|recargo|markup|porcentaje|%)/.test(t)) return 'honExtra';
+  if (/markup|margen/.test(t)) return 'markup';
+  if (/montos? extras?|\bextras\b/.test(t)) return 'extras';
+  return null;
+}
+function detectCat(t) {
+  if (/post/.test(t)) return 'post';
+  if (/pre[\s-]?produc|preprod/.test(t)) return 'preprod';
+  if (/honorario/.test(t)) return 'hon';
+  if (/produc/.test(t)) return 'prod';
+  return null;
+}
+function amountUSD(t) {
+  const m = t.match(/(us\$|\$|usd|€|eur|euros?|bs\.?|bolivares)?\s*(\d[\d.,]*)\s*(usd|dolares?|\$|€|eur|euros?|bs\.?|bolivares)?/);
+  if (!m) return null;
+  const tag = m[1] || m[3] || '';
+  const cur = /bs|bolivar/.test(tag) ? 'VES' : /€|eur/.test(tag) ? 'EUR' : /\$|usd|dolar/.test(tag) ? 'USD' : state.view;
+  return fromView(parseNum(m[2]), cur);
+}
+const CMD_WORDS = /\b(agrega|agregale|anade|anadele|suma|sumale|sube|subele|baja|pon|ponle|cambia|ajusta|elimina|borra|quita|renombra|tarifa|precio|costo|unitario|dias?|jornadas?|pauta|al|a|en|de|del|la|el)\b/g;
+
+function localParse(raw) {
+  const t = norm(raw).trim();
+  const call = (name, args = {}) => ({ calls: [{ name, args }] });
+  if (/\b(ayuda|help|comandos|que puedes)\b/.test(t)) return { calls: [], reply: HELP };
+  if (/\bpdf\b|exporta|descarga|imprim/.test(t)) return call('export_pdf');
+  if (/\b(guarda|guardar|salva)\b/.test(t)) return call('save_budget');
+  if (!/\d/.test(t) && /\b(muestra|mostrar|ver|moneda|cambia|pasa|en)\b/.test(t)) {
+    const cur = /bolivar|\bbs\b/.test(t) ? 'VES' : /euro|\beur\b/.test(t) ? 'EUR' : /dolar|\busd\b/.test(t) ? 'USD' : null;
+    if (cur) return call('set_currency', { currency: cur });
+  }
+
+  // Renombrar: "renombra X a Y" / "cambia el nombre de X por Y"
+  let m = raw.match(/(?:renombra(?:r)?|cambia(?:r)? el nombre (?:de(?:l)?)?)\s+(.+?)\s+(?:a|por)\s+["“]?([^"”]+?)["”]?\s*$/i);
+  if (m) { const it = resolveItem(m[1]); if (it) return call('update_item', { item_id: it.id, name: m[2].trim() }); }
+
+  // Eliminar renglón
+  if (/\b(elimina|borra|quita|remueve)\b/.test(t)) {
+    const it = bestItemMatch(t.replace(CMD_WORDS, ' '));
+    if (it) return call('delete_item', { item_id: it.id });
+  }
+
+  // Días: "agrega 3 días (de pauta) al Fotógrafo" / "pon 4 días a edición"
+  m = t.match(/(\d+(?:[.,]\d+)?)\s*(dias?|jornadas?)/);
+  if (m) {
+    const n = parseNum(m[1]);
+    const it = bestItemMatch(t.replace(m[0], ' ').replace(CMD_WORDS, ' '));
+    const isAdd = /\b(agrega|agregale|anade|anadele|suma|sumale|aumenta|extiende|mas)\b/.test(t);
+    if (it) return call('update_item', isAdd ? { item_id: it.id, add_days: n } : { item_id: it.id, days: n });
+    if (/pauta/.test(t)) return call('set_meta', { field: 'diasPauta', value: String(isAdd ? (+state.meta.diasPauta || 0) + n : n) });
+  }
+
+  const varKey = detectVarKey(t);
+  const isAdd = /\b(anade|anadele|agrega|agregale|suma|sumale|incluye)\b/.test(t);
+
+  // Variables porcentuales: "sube el markup a 20%", "baja la agencia en 2"
+  if (varKey && varKey !== 'extras' && !isAdd) {
+    const nums = t.match(/\d+(?:[.,]\d+)?/g);
+    if (!nums) return { calls: [], reply: `¿A qué valor llevo ${VAR_DEFS[varKey].label}?` };
+    const n = parseNum(nums[nums.length - 1]), cur = +state.vars[varKey] || 0;
+    let value = n;
+    if (/\b(sube|subele|aumenta|incrementa)\b.*\ben\b/.test(t)) value = cur + n;
+    else if (/\b(baja|bajale|reduce|disminuye|resta)\b.*\ben\b/.test(t)) value = Math.max(0, cur - n);
+    return call('set_global_var', { key: varKey, value: round2(value) });
+  }
+  if (varKey === 'extras') {
+    const a = amountUSD(t); if (a == null) return { calls: [], reply: '¿Qué monto extra aplico?' };
+    return call('set_global_var', { key: 'extras', value: isAdd ? (+state.vars.extras || 0) + a : a });
+  }
+
+  // Tarifa: "pon la tarifa del Director en 1800"
+  if (/\b(tarifa|precio|costo|unitario)\b/.test(t)) {
+    const a = amountUSD(t); const it = bestItemMatch(t.replace(/\d[\d.,]*/g, ' ').replace(CMD_WORDS, ' '));
+    if (it && a != null) return call('update_item', { item_id: it.id, unit_usd: round2(a) });
+  }
+
+  // Montos: "añade $500 a post producción" / "agrega 200 a casting"
+  if (isAdd) {
+    const a = amountUSD(t);
+    if (a == null) return { calls: [], reply: '¿Qué monto quieres añadir?' };
+    // Coincidencia estricta para no confundir "post producción" con "Oficina de producción"
+    const it = bestItemMatch(t.replace(/\d[\d.,]*/g, ' ').replace(CMD_WORDS, ' '), { min: 0.75 });
+    if (it) return call('update_item', { item_id: it.id, add_amount_usd: a });
+    const cat = detectCat(t);
+    if (cat) return call('add_item', { category: cat, name: 'Ajuste (asistente)', qty: 1, days: 1, unit_usd: a });
+    return { calls: [], reply: '¿A qué renglón o categoría lo añado?' };
+  }
+
+  if (/\b(resumen|resume|total|cuanto|estado)\b/.test(t)) return call('show_summary');
+  return { calls: [], reply: 'No entendí la instrucción.\n\n' + HELP };
+}
+
+/** Estado compacto que se envía al LLM */
+function stateForLLM() {
+  const c = calc();
   return {
-    name, cat: cat || currentCat || autoCat(name),
-    qty: qty ?? 1, days: days ?? 1, unit: round2(fromView(unit ?? 0, cur)) || 0, cur,
+    meta: state.meta, view_currency: state.view, vars: state.vars,
+    rates: state.rates.map(r => ({ id: r.id, label: r.label, cur: r.cur, usd_to_cur: r.value, active: state.activeRate[r.cur] === r.id })),
+    items: state.items.map(i => ({ id: i.id, category: i.cat, name: i.name, qty: i.qty, days: i.days, unit_usd: round2(i.unit), net_usd: round2(itemNet(i)) })),
+    totals_usd: { net: round2(c.net), subtotal_client: round2(c.subtotal), total: round2(c.total) },
   };
 }
 
-/** Recorre el texto completo, respetando encabezados de categoría */
-function parseRequirements(text) {
-  let current = null; const out = [];
-  text.split(/\r?\n/).forEach(line => {
-    const r = parseLine(line, current);
-    if (!r) return;
-    if (r.header) { current = r.header; return; }
-    out.push(r);
+async function aiChat() {
+  const system = `Eres el asistente de "${APP_NAME}", cotizador de producción audiovisual. Tienes acceso al JSON del presupuesto activo y modificas el estado usando EXCLUSIVAMENTE las funciones disponibles.
+Reglas:
+- Identifica renglones por su "id" del JSON (busca por nombre aproximado: "Fotógrafo Isa" → renglón "Fotógrafo").
+- "Agrega N días (de pauta) a <persona/rol>" = update_item con add_days sobre ese renglón.
+- Montos en USD netos: convierte Bs y € con las tasas activas. Sin moneda explícita, asume ${state.view}.
+- No crees renglones salvo pedido explícito; prefiere los existentes.
+- Puedes ejecutar export_pdf cuando lo pidan. Para acciones destructivas llama la función igualmente: la app pedirá confirmación al usuario.
+- Responde breve en español.`;
+  const msg = await callLLM({
+    tools: CHAT_TOOLS, tool_choice: 'auto',
+    messages: [{ role: 'system', content: system }, { role: 'system', content: 'ESTADO_JSON: ' + JSON.stringify(stateForLLM()) }, ...chat.history.slice(-12)],
   });
-  return out;
+  const calls = (msg.tool_calls || []).map(tc => {
+    let args = {}; try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+    return { name: tc.function.name, args };
+  }).filter(c => EXECUTORS[c.name]);
+  return { calls, reply: msg.content || '' };
 }
-
-function renderImportPreview() {
-  const el = $('#importPreview');
-  if (!importPreview.length) { el.innerHTML = ''; return; }
-  el.innerHTML = `
-    <div class="rounded-lg border border-slate-200 overflow-hidden">
-      <div class="px-2 py-1.5 bg-slate-50 text-xs font-semibold">${importPreview.length} ítems detectados (revisa la categoría)</div>
-      <div class="max-h-64 overflow-y-auto scroll-thin divide-y">
-        ${importPreview.map((r, i) => `
-          <div class="p-2 text-xs space-y-1">
-            <div class="flex justify-between gap-2"><b class="truncate">${esc(r.name)}</b><span class="tabular-nums whitespace-nowrap">${r.qty}×${r.days}×${fmt(r.unit)}</span></div>
-            <select class="inp !py-1 !text-xs" data-imp-cat="${i}">
-              ${CAT_ORDER.map(c => `<option value="${c}" ${r.cat === c ? 'selected' : ''}>${CATS[c].label}</option>`).join('')}
-            </select>
-          </div>`).join('')}
-      </div>
-      <div class="p-2 flex gap-2 border-t">
-        <button class="btn-pri flex-1 !py-1.5" data-action="import-confirm">Insertar ítems</button>
-        <button class="btn-light !py-1.5" data-action="import-cancel">Descartar</button>
-      </div>
-    </div>`;
-}
-
-/* ---------------------------------------------------------------
-   11. EXPORTACIÓN A PDF (html2pdf.js)
-   Se construye un documento limpio con estilos en línea (sin botones
-   ni inputs) a partir de los datos del Sumario.
-   --------------------------------------------------------------- */
-function buildPdfElement() {
-  const c = calc(), m = state.meta, v = state.vars;
-  const td = 'padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:11px;';
-  const tr = 'text-align:right;white-space:nowrap;';
-
-  let rows = '';
-  CAT_ORDER.forEach(k => {
-    rows += `<tr><td colspan="3" style="${td}background:#f1f5f9;font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#334155">${CATS[k].label}</td></tr>`;
-    const items = state.items.filter(i => i.cat === k);
-    rows += items.length ? items.map(i => `<tr>
-        <td style="${td}">${esc(i.name)}</td>
-        <td style="${td}${tr}color:#64748b">${i.qty} × ${i.days}</td>
-        <td style="${td}${tr}">${fmt(itemTotal(i))}</td></tr>`).join('')
-      : `<tr><td colspan="3" style="${td}color:#94a3b8;font-style:italic">Sin ítems</td></tr>`;
-    rows += `<tr><td colspan="2" style="${td}font-weight:700">Subtotal ${CATS[k].label}</td><td style="${td}${tr}font-weight:700">${fmt(c.cat[k])}</td></tr>`;
-  });
-
-  const cl = (l, val, b) => `<tr><td colspan="2" style="${td}${b ? 'font-weight:700;' : ''}">${l}</td><td style="${td}${tr}${b ? 'font-weight:700;' : ''}">${fmt(val)}</td></tr>`;
-  rows += `<tr><td colspan="3" style="height:10px"></td></tr>` +
-    cl('Costo directo', c.direct, true) +
-    cl(`Markup general (${v.markup}%)`, c.markupGen) +
-    cl(`Markup extra honorarios (${v.markupHon}%)`, c.markupHon) +
-    cl('Subtotal con markup', c.subMarkup, true) +
-    cl(`Agencia (${v.agency}%)`, c.agency) +
-    cl('Montos extras', c.extras) +
-    cl('Base imponible', c.base, true) +
-    cl(`Impuestos (${v.tax}%)`, c.tax) +
-    `<tr><td colspan="2" style="padding:10px;background:#4f46e5;color:#fff;font-weight:800;font-size:13px">TOTAL</td>
-         <td style="padding:10px;background:#4f46e5;color:#fff;font-weight:800;font-size:13px;${tr}">${fmt(c.total)}</td></tr>`;
-
-  const metaCell = (l, val) => `<td style="padding:4px 0;font-size:10px;color:#64748b;width:18%">${l}</td><td style="padding:4px 8px 4px 0;font-size:11px;font-weight:600;width:32%">${esc(val) || '—'}</td>`;
-  const rv = rateObj('VES'), re = rateObj('EUR');
-  const el = document.createElement('div');
-  el.innerHTML = `
-    <div style="font-family:Helvetica,Arial,sans-serif;color:#0f172a;padding:8px 4px;width:740px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #4f46e5;padding-bottom:10px;margin-bottom:12px">
-        <div>
-          <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#4f46e5;font-weight:700">${APP_NAME}</div>
-          <div style="font-size:20px;font-weight:800;margin-top:2px">${esc(m.proyecto || 'Presupuesto')}</div>
-        </div>
-        <div style="text-align:right;font-size:11px;color:#475569">Presupuesto ${esc(m.version)}<br>${esc(m.fecha)}</div>
-      </div>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
-        <tr>${metaCell('Cliente', m.cliente)}${metaCell('Agencia', m.agencia)}</tr>
-        <tr>${metaCell('Derechos', m.derechos)}${metaCell('Duración', m.duracion)}</tr>
-        <tr>${metaCell('N° de días', m.dias)}${metaCell('Moneda', CUR[state.view].label)}</tr>
-      </table>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr>
-          <th style="text-align:left;font-size:9px;text-transform:uppercase;color:#64748b;padding:6px 10px;border-bottom:2px solid #cbd5e1">Concepto</th>
-          <th style="text-align:right;font-size:9px;text-transform:uppercase;color:#64748b;padding:6px 10px;border-bottom:2px solid #cbd5e1">Cant × Días</th>
-          <th style="text-align:right;font-size:9px;text-transform:uppercase;color:#64748b;padding:6px 10px;border-bottom:2px solid #cbd5e1">Monto</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div style="margin-top:14px;font-size:9px;color:#64748b;line-height:1.5">
-        ${state.view !== 'USD' ? `Montos convertidos con ${state.view === 'VES' ? `${esc(rv?.label)} (1 USD = Bs ${NF.format(rv?.value || 0)})` : `${esc(re?.label)} (1 USD = € ${NF.format(re?.value || 0)})`}. ` : ''}
-        Referencia: Total equivalente ${fmt(c.total, 'USD')} · ${fmt(c.total, 'VES')} · ${fmt(c.total, 'EUR')}.
-      </div>
-    </div>`;
-  return el;
-}
-
-function exportPDF() {
-  if (typeof html2pdf === 'undefined') {
-    toast('No se pudo cargar html2pdf.js (¿sin internet?). Se abrirá la impresión del navegador.');
-    setTimeout(() => window.print(), 600);
-    return;
-  }
-  const m = state.meta;
-  toast('Generando PDF…');
-  html2pdf().set({
-    margin: [10, 10, 12, 10],
-    filename: `Presupuesto_${slug(m.proyecto)}_${slug(m.version)}.pdf`,
-    image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['avoid-all', 'css'] },
-  }).from(buildPdfElement()).save().then(() => toast('PDF descargado'));
-}
-
-/* ---------------------------------------------------------------
-   12. CHATBOT ASISTENTE
-   Arquitectura: (texto) → intérprete local u OpenAI → lista de ACCIONES
-   → (confirmación si son cambios grandes) → ejecutor único de acciones.
-   Acciones soportadas:
-     add_amount  {category?, item_name?, amount_usd}
-     add_item    {category, name, qty, days, unit_usd}
-     set_var     {key: markup|markupHon|agency|tax|extras, value, delta?}
-     set_currency{currency: VES|USD|EUR}
-     set_meta    {field, value}
-     export_pdf | save | summary
-   --------------------------------------------------------------- */
-const ACTION_TYPES = ['add_amount', 'add_item', 'set_var', 'set_currency', 'set_meta', 'export_pdf', 'save', 'summary'];
-
-function getAI() { try { return JSON.parse(localStorage.getItem(LS_AI)) || {}; } catch { return {}; } }
 
 function addMsg(role, text) {
   const box = $('#chatMessages');
   const html = esc(text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
   box.insertAdjacentHTML('beforeend', role === 'user'
-    ? `<div class="flex justify-end"><div class="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600 text-white px-3 py-2 text-sm">${html}</div></div>`
-    : `<div class="flex"><div class="max-w-[90%] rounded-2xl rounded-bl-sm bg-white border border-slate-200 px-3 py-2 text-sm">${html}</div></div>`);
+    ? `<div class="flex justify-end"><div class="max-w-[85%] rounded-2xl rounded-br-sm bg-accent text-white px-3 py-2 text-sm">${html}</div></div>`
+    : `<div class="flex"><div class="max-w-[90%] rounded-2xl rounded-bl-sm bg-white border border-neutral-200 px-3 py-2 text-sm">${html}</div></div>`);
   box.scrollTop = box.scrollHeight;
   chat.history.push({ role: role === 'user' ? 'user' : 'assistant', content: text });
-  if (chat.history.length > 20) chat.history.splice(0, chat.history.length - 20);
-}
-
-const helpText = () =>
-`Puedo ayudarte con comandos como:
-• "Añade $500 a Post Producción"
-• "Agrega 200 a Casting" (suma a un ítem existente)
-• "Nuevo ítem "Drone" en producción por 300"
-• "Cambia el markup a 20%" / "Agencia 12%" / "Impuestos 16%"
-• "Markup honorarios 15%" · "Sube el markup en 5"
-• "Muestra en bolívares / euros / dólares"
-• "Resumen" · "Guardar" · "Descarga el PDF"
-Los cambios de porcentaje grandes te los pediré confirmar.`;
-
-/** Detecta categoría mencionada en el texto normalizado */
-function detectCat(t) {
-  if (/post/.test(t)) return 'post';
-  if (/pre[\s-]?produc|preprod/.test(t)) return 'preprod';
-  if (/honorario|\bfees?\b/.test(t)) return 'hon';
-  if (/produc/.test(t)) return 'prod';
-  return null;
-}
-/** Detecta qué variable global se menciona */
-function detectVarKey(t) {
-  if (/agencia/.test(t)) return 'agency';
-  if (/impuesto|\biva\b|\btax\b/.test(t)) return 'tax';
-  if (/(markup|margen)/.test(t) && /honorario/.test(t)) return 'markupHon';
-  if (/(markup|margen)/.test(t)) return 'markup';
-  if (/montos? extras?/.test(t)) return 'extras';
-  return null;
-}
-/** Busca un ítem existente cuyo nombre aparezca en el texto (el nombre más largo gana) */
-function findItemInText(t) {
-  return [...state.items].sort((a, b) => b.name.length - a.name.length)
-    .find(i => norm(i.name).length >= 4 && t.includes(norm(i.name)));
-}
-/** Extrae un monto y lo convierte a USD según el símbolo encontrado */
-function extractAmountUSD(t) {
-  const m = t.match(/(us\$|\$|usd|€|eur|euros?|bs\.?|bolivares)?\s*(\d[\d.,]*)\s*(usd|dolares?|\$|€|eur|euros?|bs\.?|bolivares)?/);
-  if (!m) return null;
-  const tag = (m[1] || m[3] || '');
-  const cur = /bs|bolivar/.test(tag) ? 'VES' : /€|eur/.test(tag) ? 'EUR' : /\$|usd|dolar/.test(tag) ? 'USD' : state.view;
-  return { usd: fromView(parseNum(m[2]), cur), raw: parseNum(m[2]), cur };
-}
-
-/** Intérprete local de lenguaje natural (sin API) */
-function localParse(raw) {
-  const t = norm(raw).trim();
-  if (/\b(ayuda|help|que puedes|comandos)\b/.test(t)) return { actions: [], reply: helpText() };
-  if (/\bpdf\b|exporta|descarga|imprim/.test(t)) return { actions: [{ type: 'export_pdf' }] };
-  if (/\b(guarda|guardar|salva|salvar)\b/.test(t)) return { actions: [{ type: 'save' }] };
-
-  // Cambio de moneda (sin números en el mensaje)
-  if (!/\d/.test(t)) {
-    const cur = /bolivar|\bbs\b/.test(t) ? 'VES' : /euro|\beur\b/.test(t) ? 'EUR' : /dolar|\busd\b/.test(t) ? 'USD' : null;
-    if (cur) return { actions: [{ type: 'set_currency', currency: cur }] };
-  }
-
-  const isAdd = /\b(anade|anadir|agrega|agregar|suma|sumale|sumar|incluye|mete)\b/.test(t);
-  const varKey = detectVarKey(t);
-
-  // Variables globales: "markup 20%", "sube la agencia en 5", "impuestos a 16"
-  if (varKey && varKey !== 'extras' && !isAdd) {
-    const nums = t.match(/\d+(?:[.,]\d+)?/g);
-    if (!nums) return { actions: [], reply: `¿A qué porcentaje quieres llevar ${VAR_DEFS[varKey].label.replace('% ', '')}?` };
-    const n = parseNum(nums[nums.length - 1]);
-    const cur = +state.vars[varKey] || 0;
-    let value = n;
-    if (/\b(sube|subir|aumenta|incrementa)\b.*\ben\b/.test(t)) value = cur + n;
-    else if (/\b(baja|bajar|reduce|disminuye|resta)\b.*\ben\b/.test(t)) value = Math.max(0, cur - n);
-    return { actions: [{ type: 'set_var', key: varKey, value: round2(value) }] };
-  }
-
-  // Montos extras: "pon montos extras en 300" / "añade 300 a montos extras"
-  if (varKey === 'extras') {
-    const a = extractAmountUSD(t);
-    if (!a) return { actions: [], reply: '¿Qué monto extra quieres aplicar?' };
-    const value = isAdd ? (+state.vars.extras || 0) + a.usd : a.usd;
-    return { actions: [{ type: 'set_var', key: 'extras', value }] };
-  }
-
-  // Agregar montos o ítems
-  if (isAdd || /\b(nuevo|crea|crear)\b/.test(t)) {
-    const a = extractAmountUSD(t.replace(/"[^"]*"|“[^”]*”/g, ''));
-    const cat = detectCat(t);
-    if (/\b(item|partida|rubro|linea|concepto)\b/.test(t) && cat) {
-      const q = raw.match(/["“]([^"”]+)["”]/);
-      const name = q ? q[1] : 'Nuevo ítem';
-      return { actions: [{ type: 'add_item', category: cat, name, qty: 1, days: 1, unit_usd: a ? a.usd : 0 }] };
-    }
-    if (!a) return { actions: [], reply: '¿Qué monto quieres añadir? Ej: "Añade $500 a Post Producción".' };
-    const it = findItemInText(t);
-    if (it) return { actions: [{ type: 'add_amount', item_name: it.name, amount_usd: a.usd }] };
-    if (cat) return { actions: [{ type: 'add_amount', category: cat, amount_usd: a.usd }] };
-    return { actions: [], reply: '¿A qué categoría o ítem lo añado? (Pre-producción, Producción, Honorarios o Post Producción)' };
-  }
-
-  if (/\b(resumen|resume|resumir|total|cuanto|estado)\b/.test(t)) return { actions: [{ type: 'summary' }] };
-  return { actions: [], reply: 'No entendí la instrucción.\n\n' + helpText() };
-}
-
-/** Llamada opcional a OpenAI: devuelve las mismas acciones que el intérprete local */
-async function callOpenAI(text, ai) {
-  const c = calc();
-  const ctx = {
-    meta: state.meta, vars: state.vars, view_currency: state.view,
-    rates: { VES_per_USD: rateFor('VES'), EUR_per_USD: rateFor('EUR') },
-    items: state.items.map(i => ({ cat: i.cat, name: i.name, qty: i.qty, days: i.days, unit_usd: round2(i.unit) })),
-    totals_usd: { direct: round2(c.direct), total: round2(c.total) },
-  };
-  const sys = `Eres el asistente de "${APP_NAME}", un cotizador de producción audiovisual. Responde SIEMPRE en español y SOLO con JSON válido con la forma {"reply": string, "actions": array}.
-Acciones permitidas:
-- {"type":"add_amount","category":"preprod|prod|hon|post","amount_usd":number}  (crea un ítem de ajuste en la categoría)
-- {"type":"add_amount","item_name":string,"amount_usd":number}  (suma al subtotal de un ítem existente)
-- {"type":"add_item","category":"preprod|prod|hon|post","name":string,"qty":number,"days":number,"unit_usd":number}
-- {"type":"set_var","key":"markup|markupHon|agency|tax|extras","value":number}  (porcentajes como número; extras en USD)
-- {"type":"set_currency","currency":"VES|USD|EUR"}
-- {"type":"set_meta","field":"cliente|agencia|proyecto|version|derechos|fecha|duracion|dias","value":string}
-- {"type":"export_pdf"} | {"type":"save"} | {"type":"summary"}
-Todos los montos van en USD: si el usuario habla en Bs o € convierte con las tasas dadas. Si no indica moneda, asume la moneda de vista (${state.view}).
-No pidas confirmación tú: la app la solicita automáticamente para cambios grandes. Si la petición no es una acción, responde en "reply" con "actions": [].`;
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ai.key },
-    body: JSON.stringify({
-      model: ai.model || 'gpt-4o-mini', temperature: 0.2, response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: sys }, { role: 'system', content: 'Presupuesto actual: ' + JSON.stringify(ctx) },
-                 ...chat.history.slice(-8, -1), { role: 'user', content: text }],
-    }),
-  });
-  if (!res.ok) throw new Error(`OpenAI respondió ${res.status}`);
-  const data = await res.json();
-  const parsed = JSON.parse(data.choices[0].message.content || '{}');
-  const actions = (Array.isArray(parsed.actions) ? parsed.actions : []).filter(a => a && ACTION_TYPES.includes(a.type));
-  return { actions, reply: parsed.reply || '' };
-}
-
-/** ¿Esta acción es "grande" y requiere confirmación? */
-function needsConfirm(a) {
-  if (a.type === 'set_var' && VAR_DEFS[a.key]?.pct) {
-    const cur = +state.vars[a.key] || 0;
-    return +a.value >= BIG_PCT_VALUE || Math.abs(+a.value - cur) >= BIG_PCT_JUMP;
-  }
-  const amt = a.type === 'add_amount' ? +a.amount_usd : a.type === 'add_item' ? (+a.unit_usd || 0) * (+a.qty || 1) * (+a.days || 1) : 0;
-  const total = calc().total;
-  return amt > 0 && total > 0 && amt > total * BIG_AMOUNT_RATIO;
-}
-
-/** Descripción legible de una acción (para resumen / confirmación) */
-function describe(a) {
-  switch (a.type) {
-    case 'add_amount': return a.item_name ? `Sumar ${fmt(a.amount_usd)} al ítem "${a.item_name}"` : `Agregar ${fmt(a.amount_usd)} a ${CATS[a.category]?.label || a.category}`;
-    case 'add_item':   return `Crear ítem "${a.name}" en ${CATS[a.category]?.label} (${a.qty || 1} × ${a.days || 1} × ${fmt(a.unit_usd || 0)})`;
-    case 'set_var':    return VAR_DEFS[a.key]?.pct ? `${VAR_DEFS[a.key].label}: ${state.vars[a.key]}% → ${a.value}%` : `Montos extras: ${fmt(state.vars.extras)} → ${fmt(a.value)}`;
-    case 'set_currency': return `Mostrar montos en ${CUR[a.currency]?.label}`;
-    case 'set_meta':   return `${a.field}: "${a.value}"`;
-    case 'export_pdf': return 'Descargar el PDF del Sumario';
-    case 'save':       return 'Guardar en el historial';
-    case 'summary':    return 'Mostrar resumen';
-  }
-  return a.type;
-}
-
-function summaryText() {
-  const c = calc();
-  return `**Resumen ${state.meta.proyecto} (${state.meta.version})**
-${CAT_ORDER.map(k => `• ${CATS[k].label}: ${fmt(c.cat[k])}`).join('\n')}
-• Costo directo: ${fmt(c.direct)}
-• Markup + agencia + extras: ${fmt(c.base - c.direct)}
-• Impuestos: ${fmt(c.tax)}
-**TOTAL: ${fmt(c.total)}**`;
-}
-
-/** Ejecutor único: aplica una acción sobre el estado y devuelve un texto de resultado */
-function applyAction(a) {
-  switch (a.type) {
-    case 'add_amount': {
-      const amt = +a.amount_usd || 0;
-      if (a.item_name) {
-        const it = state.items.find(i => norm(i.name) === norm(a.item_name)) || state.items.find(i => norm(i.name).includes(norm(a.item_name)));
-        if (it) {
-          const factor = (+it.qty || 1) * (+it.days || 1);
-          if (!it.qty) it.qty = 1; if (!it.days) it.days = 1;
-          it.unit = (+it.unit || 0) + amt / factor;
-          return `✓ ${it.name}: +${fmt(amt)} (nuevo subtotal ${fmt(itemTotal(it))})`;
-        }
-        if (!a.category) return `✗ No encontré el ítem "${a.item_name}".`;
-      }
-      if (!CATS[a.category]) return '✗ Categoría no válida.';
-      addItem(a.category, 'Ajuste (asistente)', 1, 1, amt);
-      return `✓ ${CATS[a.category].label}: nuevo ítem "Ajuste (asistente)" por ${fmt(amt)}`;
-    }
-    case 'add_item':
-      if (!CATS[a.category]) return '✗ Categoría no válida.';
-      addItem(a.category, a.name || 'Nuevo ítem', +a.qty || 1, +a.days || 1, +a.unit_usd || 0);
-      return `✓ Ítem "${a.name}" creado en ${CATS[a.category].label}`;
-    case 'set_var':
-      if (!VAR_DEFS[a.key]) return '✗ Variable no válida.';
-      state.vars[a.key] = Math.max(0, +a.value || 0);
-      return `✓ ${VAR_DEFS[a.key].label} actualizado`;
-    case 'set_currency':
-      if (!CUR[a.currency]) return '✗ Moneda no válida.';
-      state.view = a.currency; return `✓ Mostrando montos en ${CUR[a.currency].label}`;
-    case 'set_meta':
-      if (!(a.field in state.meta)) return '✗ Campo no válido.';
-      state.meta[a.field] = a.value; return `✓ ${a.field} actualizado`;
-    case 'save':       return saveBudget() ? '✓ Guardado en el historial' : '✗ No se guardó';
-    case 'export_pdf': setTimeout(exportPDF, 200); return '✓ Generando y descargando el PDF…';
-    case 'summary':    return summaryText();
-  }
-  return '✗ Acción desconocida';
-}
-
-function applyActions(actions) {
-  const out = actions.map(applyAction);
-  render();
-  const changed = actions.some(a => !['summary', 'export_pdf', 'save'].includes(a.type));
-  return out.join('\n') + (changed ? `\n\nNuevo total: **${fmt(calc().total)}**` : '');
-}
-
-/** Decide si aplica directo o pide confirmación con un resumen de cambios */
-function processActions(actions, reply) {
-  if (!actions.length) { addMsg('bot', reply || helpText()); return; }
-  if (actions.some(needsConfirm)) {
-    chat.pending = actions;
-    addMsg('bot', `${reply ? reply + '\n\n' : ''}Resumen de cambios propuestos:\n${actions.map(a => '• ' + describe(a)).join('\n')}\n\n⚠️ Incluye cambios grandes. ¿Confirmas? (sí / no)`);
-    return;
-  }
-  addMsg('bot', (reply ? reply + '\n\n' : '') + applyActions(actions));
+  if (chat.history.length > 24) chat.history.splice(0, chat.history.length - 24);
 }
 
 async function handleChat(text) {
   addMsg('user', text);
   const t = norm(text).trim();
-
-  // Respuesta a una confirmación pendiente
-  if (chat.pending) {
-    if (/^(si|s|dale|ok|okay|confirmo|confirmar|aplica|adelante|de acuerdo|hazlo)\b/.test(t)) {
-      const acts = chat.pending; chat.pending = null;
-      addMsg('bot', applyActions(acts)); return;
+  if (chat.pending) {   // confirmación verbal
+    if (/^(si|s|dale|ok|okay|confirmo|confirmar|aplica|adelante|de acuerdo|hazlo|correcto)\b/.test(t)) {
+      const calls = chat.pending; chat.pending = null; return addMsg('bot', runCalls(calls));
     }
-    if (/^(no|cancela|cancelar|olvidalo|mejor no)\b/.test(t)) { chat.pending = null; addMsg('bot', 'Listo, no apliqué ningún cambio.'); return; }
-    chat.pending = null; // el usuario cambió de tema
+    if (/^(no|cancela|cancelar|olvidalo|mejor no)\b/.test(t)) { chat.pending = null; return addMsg('bot', 'Entendido, no apliqué ningún cambio.'); }
+    chat.pending = null;
   }
-
-  const ai = getAI();
-  if (ai.key) {
-    try {
-      $('#chatMode').textContent = 'Pensando…';
-      const r = await callOpenAI(text, ai);
-      processActions(r.actions, r.reply);
-    } catch (e) {
-      addMsg('bot', `No pude contactar a OpenAI (${e.message}). Uso el intérprete local:`);
-      const r = localParse(text); processActions(r.actions, r.reply);
-    } finally { updateChatMode(); }
+  if (getAI().key) {
+    $('#chatMode').textContent = 'Pensando…';
+    try { const r = await aiChat(); processCalls(r.calls, r.reply); }
+    catch (e) { addMsg('bot', `No pude contactar a la IA (${e.message}). Uso el intérprete local.`); const r = localParse(text); processCalls(r.calls, r.reply); }
+    finally { updateChatMode(); }
   } else {
-    const r = localParse(text); processActions(r.actions, r.reply);
+    const r = localParse(text); processCalls(r.calls, r.reply);
   }
 }
 
-function updateChatMode() {
-  const ai = getAI();
-  $('#chatMode').textContent = ai.key ? `Modo OpenAI · ${ai.model || 'gpt-4o-mini'}` : 'Modo local (sin API)';
-}
+function updateChatMode() { const ai = getAI(); $('#chatMode').textContent = ai.key ? `IA · ${ai.model || DEFAULT_MODEL}` : 'Modo local (sin API Key)'; }
 
 function initChat() {
-  const chips = ['Añade $500 a Post Producción', 'Cambia el markup a 25%', 'Resumen', 'Muestra en bolívares', 'Descarga el PDF', 'Ayuda'];
-  $('#chatChips').innerHTML = chips.map(c => `<button class="shrink-0 text-xs rounded-full border border-slate-300 px-2.5 py-1 hover:bg-slate-100" data-action="chip" data-text="${esc(c)}">${esc(c)}</button>`).join('');
-  const ai = getAI(); $('#aiKey').value = ai.key || ''; $('#aiModel').value = ai.model || '';
+  const chips = ['Sube el markup a 20%', 'Agrega 3 días de pauta al Fotógrafo', 'Añade $500 a Post Producción', 'Resumen', 'Descarga el PDF', 'Ayuda'];
+  $('#chatChips').innerHTML = chips.map(c => `<button class="shrink-0 text-xs rounded-full border border-neutral-300 px-2.5 py-1 hover:border-accent hover:text-accent" data-action="chip" data-text="${esc(c)}">${esc(c)}</button>`).join('');
   updateChatMode();
-  addMsg('bot', `¡Hola! Soy el asistente de ${APP_NAME}. Puedo modificar el presupuesto, resumirlo y descargar el PDF.\nEscribe "ayuda" para ver ejemplos.`);
+  addMsg('bot', `Hola, soy el asistente de ${APP_NAME}. Leo el presupuesto activo y puedo modificarlo en tiempo real. Escribe "ayuda" para ver ejemplos.`);
   $('#chatForm').addEventListener('submit', e => {
     e.preventDefault();
     const v = $('#chatInput').value.trim(); if (!v) return;
@@ -1326,140 +1460,191 @@ function initChat() {
   });
 }
 
-/* ---------------------------------------------------------------
-   13. EVENTOS (delegación global)
-   --------------------------------------------------------------- */
+/* -------------------------------------------------------------------------
+   13. EXPORTACIÓN PDF (solo Sumario: montos diluidos, renglones en 0 ocultos)
+   ------------------------------------------------------------------------- */
+function buildPdfElement() {
+  const c = calc(), m = state.meta, A = '#572364';
+  const td = 'padding:6px 10px;border-bottom:1px solid #e5e5e5;font-size:11px;';
+  const R = 'text-align:right;white-space:nowrap;';
+  let rows = '';
+  CAT_ORDER.filter(k => c.cat[k].client > EPS).forEach(k => {
+    rows += `<tr><td colspan="2" style="${td}background:#f2f2f2;font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase">${CATS[k].label}</td>
+             <td style="${td}${R}background:#f2f2f2;font-weight:700">${fmt(c.cat[k].client)}</td></tr>`;
+    if (state.showDetail) state.items.filter(i => i.cat === k && c.byId[i.id].client > EPS).forEach(i => {
+      rows += `<tr><td style="${td}padding-left:20px">${esc(i.name)}</td><td style="${td}${R}color:#737373">${i.qty} × ${i.days}</td><td style="${td}${R}">${fmt(c.byId[i.id].client)}</td></tr>`;
+    });
+  });
+  rows += `<tr><td colspan="2" style="${td}font-weight:700;border-top:2px solid #a3a3a3">Subtotal</td><td style="${td}${R}font-weight:700;border-top:2px solid #a3a3a3">${fmt(c.subtotal)}</td></tr>
+    <tr><td colspan="2" style="${td}">Impuestos (${state.vars.tax}%)</td><td style="${td}${R}">${fmt(c.tax)}</td></tr>
+    <tr><td colspan="2" style="padding:10px;background:${A};color:#fff;font-weight:800;font-size:13px">TOTAL</td>
+        <td style="padding:10px;background:${A};color:#fff;font-weight:800;font-size:13px;${R}">${fmt(c.total)}</td></tr>`;
+
+  const cell = (l, v) => `<td style="padding:3px 0;font-size:9px;color:#737373;text-transform:uppercase;letter-spacing:.05em;width:16%">${l}</td><td style="padding:3px 10px 3px 0;font-size:11px;font-weight:600;width:34%">${esc(v) || '—'}</td>`;
+  const rv = activeRateObj('VES'), re = activeRateObj('EUR');
+  const el = document.createElement('div');
+  el.innerHTML = `
+  <div style="font-family:Helvetica,Arial,sans-serif;color:#171717;width:740px;padding:6px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${A};padding-bottom:10px;margin-bottom:12px">
+      <div><div style="font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:${A};font-weight:700">Presupuesto de producción</div>
+           <div style="font-size:20px;font-weight:800;margin-top:2px">${esc(m.proyecto || 'Presupuesto')}</div></div>
+      <div style="text-align:right;font-size:10px;color:#525252">${m.cotizacion ? 'Cotización ' + esc(m.cotizacion) + '<br>' : ''}Versión ${esc(m.version)} · ${esc(m.fecha)}</div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+      <tr>${cell('Cliente', m.cliente)}${cell('Agencia', m.agencia)}</tr>
+      <tr>${cell('Días de pauta', m.diasPauta)}${cell('Moneda', CUR[state.view].label)}</tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>${['Concepto', 'Cant × Días', 'Monto'].map((h, k) => `<th style="text-align:${k ? 'right' : 'left'};font-size:9px;text-transform:uppercase;color:#737373;padding:6px 10px;border-bottom:2px solid #d4d4d4">${h}</th>`).join('')}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="margin-top:14px;font-size:9px;color:#737373;line-height:1.5">
+      ${state.view === 'VES' && rv ? `Montos en bolívares a ${esc(rv.label)}: 1 USD = Bs ${NF.format(rv.value)}. ` : ''}${state.view === 'EUR' && re ? `Montos en euros a ${esc(re.label)}: 1 USD = € ${NF.format(re.value)}. ` : ''}
+      Total equivalente: ${fmt(c.total, 'USD')} · ${fmt(c.total, 'VES')} · ${fmt(c.total, 'EUR')}.
+    </div>
+  </div>`;
+  return el;
+}
+
+function exportPDF() {
+  if (calc().subtotal <= EPS) return toast('El Sumario está vacío: no hay montos para exportar.');
+  if (typeof html2pdf === 'undefined') { toast('html2pdf.js no cargó (¿sin internet?).'); return; }
+  const m = state.meta;
+  toast('Generando PDF…');
+  html2pdf().set({
+    margin: [10, 10, 12, 10],
+    filename: `Presupuesto_${slug(m.proyecto)}_${slug(m.version)}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['avoid-all', 'css'] },
+  }).from(buildPdfElement()).save().then(() => toast('PDF descargado'));
+}
+
+/* -------------------------------------------------------------------------
+   14. EVENTOS (delegación global)
+   ------------------------------------------------------------------------- */
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-action]');
-  if (!b) return;
+  if (!b || b.disabled) return;
   const id = b.dataset.id;
   switch (b.dataset.action) {
-    case 'tab': activeTab = b.dataset.tab; renderTabs(); renderTab(); break;
+    case 'tab': activeTab = b.dataset.tab; Tabs(); renderTab(); break;
     case 'currency': state.view = b.dataset.cur; render(); break;
-
     case 'add-item': {
-      const it = addItem(b.dataset.cat);
-      render();
-      document.querySelector(`[data-id="${it.id}"][data-field="name"]`)?.focus();
+      const it = newItem(b.dataset.cat);
+      const lastIdx = state.items.map(i => i.cat).lastIndexOf(b.dataset.cat);
+      state.items.splice(lastIdx + 1, 0, it);
+      ui.onlyUsed = false; render();
+      $(`[data-id="${it.id}"][data-field="name"]`)?.focus();
       break;
     }
     case 'del-item': {
-      const it = findItem(id);
-      if (it && (!it.name && !it.unit || confirm(`¿Eliminar "${it.name || 'ítem sin nombre'}"?`))) { deleteItem(id); render(); }
+      const it = findItem(id); if (!it) break;
+      openModal({ title: 'Eliminar renglón', html: `<p>¿Eliminar "<b>${esc(it.name || 'sin nombre')}</b>"? Si solo no se usa en este proyecto, basta con dejarlo en 0 (quedará oculto en el Sumario).</p>`,
+        confirmText: 'Eliminar', danger: true, onConfirm: () => { state.items = state.items.filter(i => i.id !== id); render(); } });
       break;
     }
-
-    case 'add-rate': state.rates.push({ id: uid(), label: 'Nueva tasa', cur: 'VES', value: 1 }); renderRates(); autosave(); break;
+    case 'add-rate': state.rates.push({ id: uid(), label: 'Nueva tasa', cur: 'VES', value: 1 }); RatesPanel(); autosave(); break;
     case 'del-rate':
       if (state.rates.length <= 1) return toast('Debe existir al menos una tasa.');
       state.rates = state.rates.filter(r => r.id !== id);
-      ['VES', 'EUR'].forEach(c => { if (state.activeRate[c] === id) state.activeRate[c] = state.rates.find(r => r.cur === c)?.id; });
+      ['VES', 'EUR'].forEach(c => { if (!state.rates.some(r => r.id === state.activeRate[c])) state.activeRate[c] = state.rates.find(r => r.cur === c)?.id; });
       render(); break;
 
     case 'save': saveBudget(); break;
-    case 'new':
-      if (confirm('¿Crear un presupuesto nuevo en blanco? (Guarda antes el actual si lo necesitas)')) { state = blankBudget(); activeTab = 'prepro'; render(); toast('Nuevo presupuesto creado'); }
-      break;
     case 'export': exportPDF(); break;
+    case 'discard': askDiscard(); break;
+    case 'new': askNew(); break;
 
-    case 'history': openHistory(true); break;
-    case 'close-history': openHistory(false); break;
+    case 'sidebar-open': sidebar(true); break;
+    case 'sidebar-close': sidebar(false); break;
     case 'load': {
-      const b2 = loadDB().find(x => x.id === id);
-      if (b2) { state = hydrate(JSON.parse(JSON.stringify(b2))); render(); openHistory(false); toast(`Cargado: ${state.meta.proyecto} ${state.meta.version}`); }
+      const s = loadDB().find(x => x.id === id);
+      if (s) { state = hydrate(clone(s)); chat.pending = null; render(); HistoryList(); sidebar(false); toast(`Cargado: ${state.meta.proyecto} ${state.meta.version}`); }
       break;
     }
     case 'dup': {
-      const b2 = loadDB().find(x => x.id === id);
-      if (!b2) break;
-      const copy = hydrate(JSON.parse(JSON.stringify(b2)));
-      copy.id = uid(); copy.savedAt = null;
-      copy.meta.version = bumpVersion(copy.meta.version); copy.meta.fecha = today();
+      const s = loadDB().find(x => x.id === id); if (!s) break;
+      const copy = hydrate(clone(s));
+      copy.id = uid(); copy.savedAt = null; copy.meta.version = bumpVersion(copy.meta.version); copy.meta.fecha = today();
       copy.items = copy.items.map(i => ({ ...i, id: uid() }));
       state = copy;
-      if (saveBudget()) { render(); renderHistory(); toast(`Nueva versión creada: ${copy.meta.version}`); }
+      if (saveBudget({ silent: true })) { render(); toast(`Nueva versión creada: ${copy.meta.version}`); }
       break;
     }
-    case 'del-budget':
-      if (confirm('¿Eliminar este presupuesto del historial?')) { storeDB(loadDB().filter(x => x.id !== id)); renderHistory(); }
-      break;
-
-    case 'parse':
-      importPreview = parseRequirements($('#importText').value);
-      if (!importPreview.length) toast('No se detectaron ítems en el texto.');
-      renderImportPreview(); break;
-    case 'import-confirm':
-      importPreview.forEach(r => addItem(r.cat, r.name, r.qty, r.days, r.unit));
-      toast(`${importPreview.length} ítems importados`);
-      importPreview = []; $('#importText').value = ''; renderImportPreview(); render(); break;
-    case 'import-cancel': importPreview = []; renderImportPreview(); break;
-
-    case 'chat-toggle': {
-      const p = $('#chatPanel'); p.classList.toggle('hidden');
-      if (!p.classList.contains('hidden')) $('#chatInput').focus();
+    case 'del-budget': {
+      const s = loadDB().find(x => x.id === id);
+      openModal({ title: 'Eliminar del historial', html: `<p>¿Eliminar "<b>${esc(s?.meta.proyecto || '')} ${esc(s?.meta.version || '')}</b>" del historial?</p>`,
+        confirmText: 'Eliminar', danger: true, onConfirm: () => { storeDB(loadDB().filter(x => x.id !== id)); HistoryList(); MetaCard(); } });
       break;
     }
-    case 'chat-settings': $('#chatSettings').classList.toggle('hidden'); break;
-    case 'ai-save':
-      localStorage.setItem(LS_AI, JSON.stringify({ key: $('#aiKey').value.trim(), model: $('#aiModel').value.trim() }));
-      updateChatMode(); $('#chatSettings').classList.add('hidden'); toast('Configuración del asistente guardada'); break;
-    case 'ai-clear': localStorage.removeItem(LS_AI); $('#aiKey').value = ''; updateChatMode(); toast('Clave eliminada'); break;
+
+    case 'import-run': runImport(); break;
+    case 'ai-settings': openAISettings(); break;
+    case 'ai-clear': localStorage.removeItem(LS_AI); closeModal(); updateChatMode(); updateImportMode(); toast('Clave eliminada'); break;
+
+    case 'modal-cancel': closeModal(); break;
+    case 'modal-confirm': { const cb = modalCb; closeModal(); cb && cb(); break; }
+
+    case 'chat-toggle': { const p = $('#chatPanel'); p.classList.toggle('hidden'); if (!p.classList.contains('hidden')) $('#chatInput').focus(); break; }
     case 'chip': handleChat(b.dataset.text); break;
   }
 });
 
-// Edición en vivo de inputs
 document.addEventListener('input', e => {
   const t = e.target, d = t.dataset;
-  if (d.field) {                       // celdas de ítems
+  if (d.field) {
     const it = findItem(d.id); if (!it) return;
     if (d.field === 'name') it.name = t.value;
-    else if (d.field === 'unit' || d.field === 'real') it[d.field] = fromView(num(t.value));
+    else if (d.field === 'unit') it.unit = fromView(num(t.value));
     else it[d.field] = num(t.value);
     updateComputed();
-  } else if (d.meta) {                 // metadata
-    state.meta[d.meta] = t.value; updateComputed();
-  } else if (d.var) {                  // variables globales
-    state.vars[d.var] = d.var === 'extras' ? fromView(num(t.value)) : num(t.value);
-    updateComputed();
-  } else if (d.rate) {                 // tasas (etiqueta o valor)
+  } else if (d.meta) { state.meta[d.meta] = t.value; TotalsBar(); autosave(); }
+  else if (d.var) { state.vars[d.var] = d.var === 'extras' ? fromView(num(t.value)) : num(t.value); updateComputed(); }
+  else if (d.rate) {
     const r = state.rates.find(x => x.id === d.rate); if (!r) return;
     r[d.rf] = d.rf === 'value' ? num(t.value) : t.value;
-    updateComputed();
-    if (activeTab !== 'sumario') renderTab(); // los inputs en Bs/€ deben reflejar la nueva tasa
-    renderVars();
-  } else if (t.id === 'histFilter') {
-    renderHistory();
+    updateComputed(); if (activeTab !== 'sumario') renderTab(); VarsPanel();
   }
+  else if (d.realAmount) { const it = findItem(d.realAmount); if (it) { it.real.amount = num(t.value); updateComputed(); } }
+  else if (d.realCustom) { const it = findItem(d.realCustom); if (it) { it.real.custom = num(t.value); updateComputed(); } }
+  else if (t.id === 'histFilter') HistoryList();
 });
 
 document.addEventListener('change', e => {
-  const d = e.target.dataset;
+  const t = e.target, d = t.dataset;
   if (d.rateCur) {
     const r = state.rates.find(x => x.id === d.rateCur); if (!r) return;
-    r.cur = e.target.value;
+    r.cur = t.value;
     ['VES', 'EUR'].forEach(c => { if (!state.rates.some(x => x.id === state.activeRate[c] && x.cur === c)) state.activeRate[c] = state.rates.find(x => x.cur === c)?.id; });
     render();
-  } else if (d.rateActive) {
-    const r = state.rates.find(x => x.id === d.rateActive); if (r) { state.activeRate[r.cur] = r.id; render(); }
-  } else if (d.impCat !== undefined) {
-    importPreview[+d.impCat].cat = e.target.value;
+  } else if (d.rateActive) { const r = state.rates.find(x => x.id === d.rateActive); if (r) { state.activeRate[r.cur] = r.id; render(); } }
+  else if (d.realCur) { const it = findItem(d.realCur); if (it) { it.real.cur = t.value; it.real.rateId = state.activeRate[t.value] || null; renderTab(); TotalsBar(); autosave(); } }
+  else if (d.realRate) { const it = findItem(d.realRate); if (it) { it.real.rateId = t.value; renderTab(); autosave(); } }
+  else if (d.toggle) { state[d.toggle] = t.checked; renderTab(); autosave(); }
+  else if (d.ui) { ui[d.ui] = t.checked; renderTab(); }
+  else if (t.id === 'pdfInput' && t.files[0]) {
+    const f = t.files[0]; toast('Leyendo PDF…');
+    extractPdfText(f).then(txt => {
+      $('#importText').value = txt;
+      toast(txt ? `PDF leído (${txt.length} caracteres). Revisa y pulsa Procesar.` : 'El PDF no tiene texto seleccionable (¿escaneado?).', 3500);
+    }).catch(err => toast('No se pudo leer el PDF: ' + err.message, 4000)).finally(() => { t.value = ''; });
   }
 });
 
-/* ---------------------------------------------------------------
-   14. ARRANQUE
-   --------------------------------------------------------------- */
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); sidebar(false); } });
+
+/* -------------------------------------------------------------------------
+   15. ARRANQUE
+   ------------------------------------------------------------------------- */
 (function init() {
   try {
     const saved = JSON.parse(localStorage.getItem(LS_CURRENT));
-    state = saved && Array.isArray(saved.items) ? hydrate(saved) : sampleBudget();
-  } catch { state = sampleBudget(); }
-
-  // En escritorio, abrir por defecto los paneles principales de configuración
-  if (window.innerWidth >= 1024) document.querySelectorAll('[data-open-desktop]').forEach(d => d.open = true);
-
+    state = saved && Array.isArray(saved.items) ? hydrate(saved) : demoBudget();
+  } catch { state = demoBudget(); }
   render();
+  HistoryList();
   initChat();
 })();
 </script>
