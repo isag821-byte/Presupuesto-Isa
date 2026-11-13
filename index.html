@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Modelo Presupuesto Isa</title>
+
+  <!-- =========================================================
+       DEPENDENCIAS (CDN)
+       - Tailwind CSS (Play CDN): estilos utilitarios sin build.
+       - html2pdf.js: exportación del Sumario a PDF.
+       ========================================================= -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <!-- Componentes reutilizables con @apply (soportado por el Play CDN) -->
+  <style type="text/tailwindcss">
+    @layer components {
+      .card      { @apply bg-white rounded-xl border border-slate-200 shadow-sm; }
+      .inp       { @apply w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500; }
+      .btn       { @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition active:scale-[.98]; }
+      .btn-pri   { @apply btn bg-indigo-600 text-white hover:bg-indigo-500; }
+      .btn-sec   { @apply btn bg-white/10 text-white hover:bg-white/20; }
+      .btn-light { @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200; }
+      .tab-btn   { @apply whitespace-nowrap px-4 py-2 text-sm font-medium rounded-lg text-slate-600 hover:bg-white hover:text-slate-900; }
+      .tab-on    { @apply bg-white text-indigo-700 shadow-sm; }
+      .th        { @apply text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500 py-2 px-1; }
+      .panel-sum { @apply flex items-center justify-between cursor-pointer select-none px-4 py-3 font-semibold text-slate-800; }
+    }
+  </style>
+  <style>
+    /* Quita flechas de los inputs numéricos para una vista más limpia */
+    input[type=number]::-webkit-inner-spin-button { opacity: .4; }
+    details > summary::-webkit-details-marker { display: none; }
+    details[open] .chev { transform: rotate(180deg); }
+    .scroll-thin::-webkit-scrollbar { height: 6px; width: 6px; }
+    .scroll-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    @media print { .no-print { display: none !important; } }
+  </style>
+</head>
+
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+<!-- =========================================================
+     CABECERA + BARRA DE TOTALES
+     ========================================================= -->
+<div class="lg:sticky lg:top-0 z-30 no-print">
+  <header class="bg-slate-900 text-white">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 rounded-xl bg-indigo-500 grid place-items-center font-black tracking-tight">MI</div>
+        <div>
+          <h1 class="text-lg font-bold leading-tight">Modelo Presupuesto Isa</h1>
+          <p class="text-xs text-slate-400">Cotizador y gestor de presupuestos audiovisuales</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Selector multimoneda global -->
+        <div id="currencySwitch" class="inline-flex rounded-lg bg-slate-800 p-1"></div>
+        <button class="btn-sec" data-action="history">Historial</button>
+        <button class="btn-sec" data-action="save">Guardar</button>
+        <button class="btn-sec" data-action="new">Nuevo</button>
+        <button class="btn-pri" data-action="export">Exportar PDF</button>
+      </div>
+    </div>
+  </header>
+  <section id="totalsBar" class="bg-white border-b border-slate-200"></section>
+</div>
+
+<!-- =========================================================
+     CUERPO PRINCIPAL
+     Columna izquierda: configuración | Columna derecha: pestañas
+     ========================================================= -->
+<main class="max-w-7xl mx-auto px-3 sm:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+  <!-- ---------- Panel lateral de configuración ---------- -->
+  <aside class="lg:col-span-4 xl:col-span-3 space-y-3 no-print">
+    <details class="card cfg-panel" data-open-desktop>
+      <summary class="panel-sum">Datos del proyecto <span class="chev transition">▾</span></summary>
+      <div id="metaPanel" class="px-4 pb-4"></div>
+    </details>
+
+    <details class="card cfg-panel" data-open-desktop>
+      <summary class="panel-sum">Variables globales <span class="chev transition">▾</span></summary>
+      <div id="varsPanel" class="px-4 pb-4"></div>
+    </details>
+
+    <details class="card cfg-panel">
+      <summary class="panel-sum">Tasas de cambio <span class="chev transition">▾</span></summary>
+      <div id="ratesPanel" class="px-4 pb-4"></div>
+    </details>
+
+    <details class="card cfg-panel">
+      <summary class="panel-sum">Importar requerimientos <span class="chev transition">▾</span></summary>
+      <div class="px-4 pb-4 space-y-2">
+        <p class="text-xs text-slate-500 leading-relaxed">
+          Pega una lista (una línea por ítem). Ejemplos:<br>
+          <code class="text-[11px]">PRODUCCIÓN:</code> (encabezado de categoría)<br>
+          <code class="text-[11px]">Paquete de cámara 2 días x $650</code><br>
+          <code class="text-[11px]">Post: Edición 4 días x 120</code><br>
+          <code class="text-[11px]">Catering 25 pax x 2 días x 8</code><br>
+          <code class="text-[11px]">Director - 1.500</code>
+        </p>
+        <textarea id="importText" rows="6" class="inp font-mono text-xs" placeholder="Pega aquí los requerimientos..."></textarea>
+        <button class="btn-light w-full" data-action="parse">Analizar texto</button>
+        <div id="importPreview"></div>
+      </div>
+    </details>
+  </aside>
+
+  <!-- ---------- Contenido con pestañas ---------- -->
+  <section class="lg:col-span-8 xl:col-span-9 min-w-0">
+    <nav id="tabs" class="no-print flex gap-1 overflow-x-auto scroll-thin bg-slate-200/70 p-1 rounded-xl mb-4"></nav>
+    <div id="tabContent"></div>
+  </section>
+</main>
+
+<!-- =========================================================
+     HISTORIAL (drawer lateral)
+     ========================================================= -->
+<div id="drawerOverlay" class="fixed inset-0 bg-black/40 z-40 hidden no-print" data-action="close-history"></div>
+<aside id="historyDrawer" class="no-print fixed top-0 right-0 h-full w-full sm:w-[440px] bg-white z-50 shadow-2xl translate-x-full transition-transform duration-300 flex flex-col">
+  <div class="flex items-center justify-between px-4 py-3 border-b">
+    <div>
+      <h2 class="font-bold">Historial de presupuestos</h2>
+      <p id="histCount" class="text-xs text-slate-500"></p>
+    </div>
+    <button class="btn-light" data-action="close-history">Cerrar</button>
+  </div>
+  <div class="p-3 border-b">
+    <input id="histFilter" class="inp" placeholder="Filtrar por cliente, proyecto, agencia o versión..." />
+  </div>
+  <div id="histList" class="flex-1 overflow-y-auto scroll-thin p-3 space-y-2"></div>
+</aside>
+
+<!-- =========================================================
+     CHATBOT ASISTENTE
+     ========================================================= -->
+<button id="chatFab" data-action="chat-toggle" class="no-print fixed bottom-4 right-4 z-40 h-14 w-14 rounded-full bg-indigo-600 text-white shadow-xl hover:bg-indigo-500 grid place-items-center" title="Asistente">
+  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.84L3 20l1.4-3.72A7.64 7.64 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+</button>
+
+<div id="chatPanel" class="no-print hidden fixed z-40 bottom-20 right-4 left-4 sm:left-auto sm:w-96 h-[70vh] max-h-[620px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+  <div class="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+    <div>
+      <div class="font-semibold">Asistente Isa</div>
+      <div id="chatMode" class="text-[11px] text-slate-400"></div>
+    </div>
+    <div class="flex gap-1">
+      <button class="btn-sec !px-2 !py-1 text-xs" data-action="chat-settings">API</button>
+      <button class="btn-sec !px-2 !py-1 text-xs" data-action="chat-toggle">✕</button>
+    </div>
+  </div>
+  <!-- Configuración opcional de OpenAI -->
+  <div id="chatSettings" class="hidden border-b bg-slate-50 p-3 space-y-2 text-xs">
+    <p class="text-slate-500">Opcional: con una API Key de OpenAI el asistente entiende lenguaje libre. Sin ella funciona con un intérprete local de comandos. La clave se guarda solo en este navegador.</p>
+    <input id="aiKey" type="password" class="inp" placeholder="sk-..." />
+    <input id="aiModel" class="inp" placeholder="Modelo (ej: gpt-4o-mini)" />
+    <div class="flex gap-2">
+      <button class="btn-light flex-1" data-action="ai-save">Guardar</button>
+      <button class="btn-light flex-1" data-action="ai-clear">Borrar clave</button>
+    </div>
+  </div>
+  <div id="chatMessages" class="flex-1 overflow-y-auto scroll-thin p-3 space-y-2 bg-slate-50"></div>
+  <div class="px-3 pt-2 flex gap-1 overflow-x-auto scroll-thin" id="chatChips"></div>
+  <form id="chatForm" class="p-3 flex gap-2">
+    <input id="chatInput" class="inp" placeholder='Ej: "Añade $500 a Post Producción"' autocomplete="off" />
+    <button class="btn-pri" type="submit">Enviar</button>
+  </form>
+</div>
+
+<!-- Notificaciones -->
+<div id="toast" class="no-print fixed bottom-24 left-1/2 -translate-x-1/2 z-[60] hidden rounded-lg bg-slate-900 text-white text-sm px-4 py-2 shadow-lg"></div>
+
+
+<script>
+/* =====================================================================
+   MODELO PRESUPUESTO ISA
+   Toda la lógica de la app: estado, cálculos, render, historial,
+   importación de texto, chatbot y exportación a PDF.
+   Convención: TODOS los montos se guardan internamente en USD.
+   La vista (y los inputs) se muestran en la moneda activa y se
+   convierten con la tasa activa de cada moneda.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------
+   1. CONSTANTES Y UTILIDADES
+   --------------------------------------------------------------- */
+const APP_NAME   = 'Modelo Presupuesto Isa';
+const LS_DB      = 'mpi_db_v1';       // base de datos local (hasta 100 presupuestos)
+const LS_CURRENT = 'mpi_current_v1';  // borrador en curso (autoguardado)
+const LS_AI      = 'mpi_ai_v1';       // configuración opcional de OpenAI
+const MAX_BUDGETS = 100;
+
+// Umbrales a partir de los cuales el chatbot pide confirmación
+const BIG_PCT_VALUE = 20;   // un porcentaje que queda en 20% o más
+const BIG_PCT_JUMP  = 10;   // o un salto de 10 puntos o más
+const BIG_AMOUNT_RATIO = 0.25; // un monto que supera el 25% del total
+
+// Categorías de costos y en qué pestaña viven
+const CATS = {
+  preprod: { label: 'Pre-producción',  tab: 'prepro' },
+  prod:    { label: 'Producción',      tab: 'prepro' },
+  hon:     { label: 'Honorarios',      tab: 'hon'    },
+  post:    { label: 'Post-producción', tab: 'post'   },
+};
+const CAT_ORDER = ['preprod', 'prod', 'hon', 'post'];
+
+const TABS = [
+  { id: 'sumario',    label: 'Sumario' },
+  { id: 'prepro',     label: 'Pre & Pro' },
+  { id: 'hon',        label: 'Honorarios' },
+  { id: 'post',       label: 'Post Producción' },
+  { id: 'ejecutable', label: 'Ejecutable' },
+];
+
+// Variables globales que afectan el cierre
+const VAR_DEFS = {
+  markup:    { label: '% Markup general',          pct: true  },
+  markupHon: { label: '% Markup extra honorarios', pct: true  },
+  agency:    { label: '% Agencia',                 pct: true  },
+  tax:       { label: '% Impuestos',               pct: true  },
+  extras:    { label: 'Montos extras',             pct: false },
+};
+
+const CUR = {
+  VES: { sym: 'Bs', label: 'Bolívares' },
+  USD: { sym: '$',  label: 'Dólares'   },
+  EUR: { sym: '€',  label: 'Euros'     },
+};
+
+const META_FIELDS = [
+  { k: 'cliente',  label: 'Cliente' },
+  { k: 'agencia',  label: 'Agencia' },
+  { k: 'proyecto', label: 'Proyecto', full: true },
+  { k: 'version',  label: 'Versión' },
+  { k: 'fecha',    label: 'Fecha', type: 'date' },
+  { k: 'derechos', label: 'Derechos', full: true, ph: 'Ej: 1 año, TV + digital, Venezuela' },
+  { k: 'duracion', label: 'Duración', ph: 'Ej: 30" + 15"' },
+  { k: 'dias',     label: 'N° de días', type: 'number' },
+];
+
+const NF = new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const uid    = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+const norm   = s => (s ?? '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const esc    = s => (s ?? '').toString().replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const round2 = n => Math.round((+n || 0) * 100) / 100;
+const num    = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+const today  = () => new Date().toISOString().slice(0, 10);
+const $      = sel => document.querySelector(sel);
+const slug   = s => norm(s || 'presupuesto').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'presupuesto';
+
+/** Convierte texto numérico en formato latino o anglosajón: "1.500,50" / "1,500.50" / "1500" */
+function parseNum(str) {
+  let s = (str ?? '').toString().replace(/[^\d.,-]/g, '');
+  const c = s.lastIndexOf(','), d = s.lastIndexOf('.');
+  if (c > -1 && d > -1) {
+    s = c > d ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  } else if (c > -1) {
+    const parts = s.split(',');
+    s = (parts.length > 2 || parts[parts.length - 1].length === 3) ? s.replace(/,/g, '') : s.replace(',', '.');
+  } else if (d > -1) {
+    const parts = s.split('.');
+    if (parts.length > 2 || parts[parts.length - 1].length === 3) s = s.replace(/\./g, '');
+  }
+  return parseFloat(s) || 0;
+}
+
+/* ---------------------------------------------------------------
+   2. ESTADO Y MODELOS DE DATOS
+   --------------------------------------------------------------- */
+let state;                 // presupuesto activo
+let activeTab = 'sumario'; // pestaña visible
+let importPreview = [];    // filas detectadas por el importador
+const chat = { pending: null, history: [] }; // estado del chatbot
+
+function newItem(cat, name = '', qty = 1, days = 1, unit = 0) {
+  return { id: uid(), cat, name, qty, days, unit, real: 0 }; // unit y real en USD
+}
+
+/** Presupuesto vacío con valores por defecto */
+function blankBudget() {
+  return {
+    id: uid(),
+    meta: { cliente: '', agencia: '', proyecto: 'Nuevo proyecto', version: 'V1', derechos: '', fecha: today(), duracion: '', dias: 1 },
+    view: 'USD',
+    // Cada tasa expresa: 1 USD = value (en la moneda indicada). Etiquetas editables.
+    rates: [
+      { id: 'bcv',  label: 'Tasa BCV',      cur: 'VES', value: 250 },
+      { id: 'prom', label: 'Tasa Promedio', cur: 'VES', value: 300 },
+      { id: 'eur',  label: 'Tasa Euro',     cur: 'EUR', value: 0.86 },
+    ],
+    activeRate: { VES: 'bcv', EUR: 'eur' },
+    vars: { markup: 15, markupHon: 10, agency: 10, tax: 16, extras: 0 },
+    items: [],
+    savedAt: null,
+  };
+}
+
+/** Presupuesto de ejemplo para la primera carga */
+function sampleBudget() {
+  const b = blankBudget();
+  b.meta = { cliente: 'Cliente Demo C.A.', agencia: 'Agencia Creativa', proyecto: 'Campaña Lanzamiento', version: 'V1', derechos: '1 año · TV + Digital · Venezuela', fecha: today(), duracion: '30" + 15"', dias: 2 };
+  const I = newItem;
+  b.items = [
+    I('preprod', 'Scouting de locaciones', 1, 2, 150),
+    I('preprod', 'Casting', 1, 1, 400),
+    I('preprod', 'Storyboard', 1, 1, 350),
+    I('preprod', 'Reunión de pre-producción (PPM)', 1, 1, 120),
+    I('prod', 'Paquete de cámara', 1, 2, 650),
+    I('prod', 'Luces y grip', 1, 2, 500),
+    I('prod', 'Locación', 1, 2, 400),
+    I('prod', 'Arte y utilería', 1, 1, 600),
+    I('prod', 'Catering (pax)', 25, 2, 8),
+    I('prod', 'Transporte', 2, 2, 90),
+    I('prod', 'Talentos', 3, 1, 250),
+    I('hon', 'Director', 1, 1, 1500),
+    I('hon', 'Director de Fotografía (DP)', 1, 2, 350),
+    I('hon', 'Fotógrafo', 1, 1, 400),
+    I('hon', 'Productor', 1, 5, 120),
+    I('hon', 'Asistente de dirección', 1, 2, 100),
+    I('post', 'Edición', 1, 4, 120),
+    I('post', 'Corrección de color', 1, 2, 150),
+    I('post', 'Retoque fotográfico (imágenes)', 20, 1, 15),
+    I('post', 'Animación / Motion graphics', 1, 1, 600),
+    I('post', 'Música y diseño sonoro', 1, 1, 450),
+  ];
+  return b;
+}
+
+/** Normaliza un presupuesto cargado (por si viene de una versión anterior o incompleto) */
+function hydrate(b) {
+  const d = blankBudget();
+  return {
+    ...d, ...b,
+    meta: { ...d.meta, ...(b.meta || {}) },
+    vars: { ...d.vars, ...(b.vars || {}) },
+    activeRate: { ...d.activeRate, ...(b.activeRate || {}) },
+    rates: (b.rates && b.rates.length) ? b.rates : d.rates,
+    items: (b.items || []).map(i => ({ ...newItem(i.cat || 'prod'), ...i })),
+  };
+}
+
+const findItem = id => state.items.find(i => i.id === id);
+
+/* ---------------------------------------------------------------
+   3. MONEDAS Y TASAS
+   --------------------------------------------------------------- */
+/** Tasa activa de una moneda (1 USD = X) */
+function rateFor(cur) {
+  if (cur === 'USD') return 1;
+  const r = state.rates.find(r => r.id === state.activeRate[cur] && r.cur === cur) || state.rates.find(r => r.cur === cur);
+  return r ? (+r.value || 0) : 0;
+}
+const rateObj = cur => state.rates.find(r => r.id === state.activeRate[cur] && r.cur === cur) || state.rates.find(r => r.cur === cur);
+
+/** USD → moneda indicada (por defecto la de la vista) */
+const conv = (usd, cur = state.view) => (+usd || 0) * rateFor(cur);
+/** Moneda indicada → USD */
+function fromView(v, cur = state.view) {
+  const r = rateFor(cur);
+  return r ? (+v || 0) / r : 0;
+}
+/** Formatea un monto USD en la moneda indicada */
+const fmt = (usd, cur = state.view) => `${CUR[cur].sym} ${NF.format(conv(usd, cur))}`;
+
+/* ---------------------------------------------------------------
+   4. MOTOR DE CÁLCULO
+   --------------------------------------------------------------- */
+const itemTotal = i => (+i.qty || 0) * (+i.days || 0) * (+i.unit || 0);
+
+/**
+ * Calcula todo el cierre del presupuesto (en USD):
+ *  costo directo = Pre + Pro + Post + Honorarios
+ *  + markup general (sobre todo el costo directo)
+ *  + markup extra (solo sobre honorarios)
+ *  + % agencia (sobre el subtotal con markup)
+ *  + montos extras
+ *  = base imponible  → + impuestos = TOTAL
+ */
+function calc(s = state) {
+  const cat = {}, realCat = {};
+  CAT_ORDER.forEach(c => { cat[c] = 0; realCat[c] = 0; });
+  s.items.forEach(i => { cat[i.cat] += itemTotal(i); realCat[i.cat] += +i.real || 0; });
+
+  const v = s.vars;
+  const direct     = CAT_ORDER.reduce((a, c) => a + cat[c], 0);
+  const markupGen  = direct * (+v.markup || 0) / 100;
+  const markupHon  = cat.hon * (+v.markupHon || 0) / 100;
+  const subMarkup  = direct + markupGen + markupHon;
+  const agency     = subMarkup * (+v.agency || 0) / 100;
+  const extras     = +v.extras || 0;
+  const base       = subMarkup + agency + extras;
+  const tax        = base * (+v.tax || 0) / 100;
+  const total      = base + tax;
+  const realAll    = CAT_ORDER.reduce((a, c) => a + realCat[c], 0);
+
+  return { cat, realCat, direct, markupGen, markupHon, subMarkup, agency, extras, base, tax, total, realAll,
+           variance: direct - realAll, margin: base - realAll };
+}
+
+/* ---------------------------------------------------------------
+   5. RENDER: PANELES LATERALES
+   --------------------------------------------------------------- */
+function renderCurrencySwitch() {
+  $('#currencySwitch').innerHTML = Object.keys(CUR).map(c => `
+    <button data-action="currency" data-cur="${c}"
+      class="px-3 py-1.5 rounded-md text-sm font-semibold transition ${state.view === c ? 'bg-white text-slate-900' : 'text-slate-300 hover:text-white'}">
+      ${c === 'VES' ? 'Bs' : c}
+    </button>`).join('');
+}
+
+function renderTotalsBar() {
+  const c = calc(), m = state.meta;
+  $('#totalsBar').innerHTML = `
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+      <div class="min-w-0">
+        <div class="text-[11px] uppercase tracking-wide text-slate-500">${esc(m.cliente || 'Sin cliente')}</div>
+        <div class="font-semibold truncate">${esc(m.proyecto || 'Sin título')} <span class="text-slate-400 font-normal">· ${esc(m.version)}</span></div>
+      </div>
+      <div class="flex flex-wrap items-end gap-x-5 gap-y-1">
+        ${['VES', 'USD', 'EUR'].map(cur => `
+          <div class="${cur === state.view ? 'text-indigo-700' : 'text-slate-500'}">
+            <div class="text-[10px] uppercase tracking-wide">Total ${cur === 'VES' ? 'Bs' : cur}</div>
+            <div class="font-bold tabular-nums ${cur === state.view ? 'text-xl' : 'text-sm'}">${fmt(c.total, cur)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function renderMeta() {
+  $('#metaPanel').innerHTML = `<div class="grid grid-cols-2 gap-2">
+    ${META_FIELDS.map(f => `
+      <label class="block ${f.full ? 'col-span-2' : ''}">
+        <span class="text-xs text-slate-500">${f.label}</span>
+        <input class="inp" type="${f.type || 'text'}" data-meta="${f.k}" value="${esc(state.meta[f.k])}" placeholder="${esc(f.ph || '')}">
+      </label>`).join('')}
+  </div>`;
+}
+
+function renderVars() {
+  const sym = CUR[state.view].sym;
+  $('#varsPanel').innerHTML = `<div class="grid grid-cols-2 gap-2">
+    ${Object.entries(VAR_DEFS).map(([k, d]) => `
+      <label class="block ${k === 'extras' ? 'col-span-2' : ''}">
+        <span class="text-xs text-slate-500">${d.label}</span>
+        <div class="relative">
+          <input type="number" step="0.01" class="inp text-right pr-8" data-var="${k}"
+            value="${d.pct ? state.vars[k] : round2(conv(state.vars[k]))}">
+          <span class="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">${d.pct ? '%' : sym}</span>
+        </div>
+      </label>`).join('')}
+  </div>
+  <p class="mt-2 text-[11px] text-slate-500">Los cambios recalculan el total al instante.</p>`;
+}
+
+function renderRates() {
+  $('#ratesPanel').innerHTML = `
+    <p class="text-[11px] text-slate-500 mb-2">Cada tasa indica: <b>1 USD = X</b>. Edita la etiqueta, la moneda y el valor; marca cuál usar.</p>
+    <div class="space-y-3">
+      ${state.rates.map(r => `
+        <div class="rounded-lg border border-slate-200 p-2 space-y-1.5">
+          <div class="grid grid-cols-12 gap-1.5">
+            <input class="inp col-span-12 sm:col-span-6 lg:col-span-12 xl:col-span-6" data-rate="${r.id}" data-rf="label" value="${esc(r.label)}" placeholder="Etiqueta">
+            <select class="inp col-span-4 sm:col-span-2 lg:col-span-4 xl:col-span-2 !px-1" data-rate-cur="${r.id}">
+              <option value="VES" ${r.cur === 'VES' ? 'selected' : ''}>Bs</option>
+              <option value="EUR" ${r.cur === 'EUR' ? 'selected' : ''}>€</option>
+            </select>
+            <input type="number" step="0.0001" min="0" class="inp col-span-6 sm:col-span-3 lg:col-span-6 xl:col-span-3 text-right" data-rate="${r.id}" data-rf="value" value="${r.value}">
+            <button class="col-span-2 sm:col-span-1 lg:col-span-2 xl:col-span-1 text-slate-400 hover:text-rose-600" data-action="del-rate" data-id="${r.id}" title="Eliminar tasa">✕</button>
+          </div>
+          <label class="flex items-center gap-1.5 text-xs text-slate-600">
+            <input type="radio" name="active-${r.cur}" data-rate-active="${r.id}" ${state.activeRate[r.cur] === r.id ? 'checked' : ''}>
+            Usar como tasa activa para ${CUR[r.cur].sym}
+          </label>
+        </div>`).join('')}
+    </div>
+    <button class="btn-light w-full mt-3" data-action="add-rate">+ Agregar tasa</button>`;
+}
+
+function renderTabs() {
+  $('#tabs').innerHTML = TABS.map(t =>
+    `<button class="tab-btn ${activeTab === t.id ? 'tab-on' : ''}" data-action="tab" data-tab="${t.id}">${t.label}</button>`).join('');
+}
+
+/* ---------------------------------------------------------------
+   6. RENDER: PESTAÑAS
+   --------------------------------------------------------------- */
+function renderTab() {
+  const el = $('#tabContent');
+  switch (activeTab) {
+    case 'sumario':    el.innerHTML = summaryHtml(); break;
+    case 'prepro':     el.innerHTML = itemsTableHtml('preprod') + itemsTableHtml('prod') + preproTotalHtml(); break;
+    case 'hon':        el.innerHTML = itemsTableHtml('hon'); break;
+    case 'post':       el.innerHTML = itemsTableHtml('post'); break;
+    case 'ejecutable': el.innerHTML = ejecutableHtml(); break;
+  }
+}
+
+/* ----- 6.1 Sumario ----- */
+function summaryHtml() {
+  const c = calc(), v = state.vars;
+  const pct = x => c.direct ? (x / c.direct * 100) : 0;
+
+  // Tarjetas por categoría
+  const cards = CAT_ORDER.map(k => `
+    <div class="card p-3">
+      <div class="text-[11px] uppercase tracking-wide text-slate-500">${CATS[k].label}</div>
+      <div class="text-lg font-bold tabular-nums">${fmt(c.cat[k])}</div>
+      <div class="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-indigo-500" style="width:${pct(c.cat[k]).toFixed(1)}%"></div></div>
+      <div class="text-[11px] text-slate-500 mt-1">${pct(c.cat[k]).toFixed(1)}% del costo directo</div>
+    </div>`).join('');
+
+  // Detalle por categoría: los nombres vienen directo del estado (reflejan las ediciones)
+  const detail = CAT_ORDER.map(k => {
+    const items = state.items.filter(i => i.cat === k);
+    return `
+      <tr class="bg-slate-50"><td colspan="3" class="px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">${CATS[k].label}</td></tr>
+      ${items.length ? items.map(i => `
+        <tr class="border-b border-slate-100">
+          <td class="px-3 py-1.5">${esc(i.name) || '<span class="text-slate-400 italic">Sin nombre</span>'}</td>
+          <td class="px-3 py-1.5 text-right text-slate-500 text-xs whitespace-nowrap">${i.qty} × ${i.days}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">${fmt(itemTotal(i))}</td>
+        </tr>`).join('') : `<tr><td colspan="3" class="px-3 py-1.5 text-slate-400 italic text-xs">Sin ítems</td></tr>`}
+      <tr class="border-b border-slate-200">
+        <td class="px-3 py-1.5 font-semibold" colspan="2">Subtotal ${CATS[k].label}</td>
+        <td class="px-3 py-1.5 text-right font-semibold tabular-nums whitespace-nowrap">${fmt(c.cat[k])}</td>
+      </tr>`;
+  }).join('');
+
+  // Bloque de cierre
+  const row = (label, val, cls = '') => `
+    <tr class="border-b border-slate-100 ${cls}"><td class="px-3 py-1.5" colspan="2">${label}</td>
+    <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">${fmt(val)}</td></tr>`;
+  const closing = [
+    row('Costo directo (Pre + Pro + Honorarios + Post)', c.direct, 'font-semibold'),
+    row(`Markup general (${v.markup}%)`, c.markupGen),
+    row(`Markup extra honorarios (${v.markupHon}%)`, c.markupHon),
+    row('Subtotal con markup', c.subMarkup, 'font-semibold'),
+    row(`Agencia (${v.agency}%)`, c.agency),
+    row('Montos extras', c.extras),
+    row('Base imponible', c.base, 'font-semibold'),
+    row(`Impuestos (${v.tax}%)`, c.tax),
+  ].join('');
+
+  const rv = rateObj('VES'), re = rateObj('EUR');
+  return `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">${cards}</div>
+    <div class="card overflow-hidden">
+      <div class="px-4 py-3 border-b flex flex-wrap items-center justify-between gap-2">
+        <h2 class="font-bold">Sumario del presupuesto</h2>
+        <span class="text-xs text-slate-500">Montos en ${CUR[state.view].label}</span>
+      </div>
+      <div class="overflow-x-auto scroll-thin">
+        <table class="w-full text-sm min-w-[480px]">
+          <thead><tr class="border-b"><th class="th px-3">Concepto</th><th class="th px-3 text-right">Cant × Días</th><th class="th px-3 text-right">Monto</th></tr></thead>
+          <tbody>${detail}</tbody>
+          <tbody class="border-t-2 border-slate-300">${closing}
+            <tr class="bg-indigo-600 text-white"><td class="px-3 py-3 font-bold text-base" colspan="2">TOTAL / CIERRE</td>
+              <td class="px-3 py-3 text-right font-bold text-base tabular-nums whitespace-nowrap">${fmt(c.total)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="px-4 py-2 text-[11px] text-slate-500 border-t">
+        ${rv ? `${esc(rv.label)}: 1 USD = Bs ${NF.format(rv.value)}` : ''} ${re ? ` · ${esc(re.label)}: 1 USD = € ${NF.format(re.value)}` : ''}
+      </div>
+    </div>`;
+}
+
+/* ----- 6.2 Tablas de ítems (Pre, Pro, Honorarios, Post) ----- */
+function itemRowHtml(i) {
+  return `
+    <tr class="border-b border-slate-100 hover:bg-slate-50/60">
+      <td class="py-1.5 pr-2"><input class="inp" data-id="${i.id}" data-field="name" value="${esc(i.name)}" placeholder="Nombre del ítem"></td>
+      <td class="py-1.5 px-1"><input type="number" min="0" step="1" class="inp text-right" data-id="${i.id}" data-field="qty" value="${i.qty}"></td>
+      <td class="py-1.5 px-1"><input type="number" min="0" step="0.5" class="inp text-right" data-id="${i.id}" data-field="days" value="${i.days}"></td>
+      <td class="py-1.5 px-1"><input type="number" min="0" step="0.01" class="inp text-right" data-id="${i.id}" data-field="unit" value="${round2(conv(i.unit))}"></td>
+      <td class="py-1.5 px-2 text-right font-medium tabular-nums whitespace-nowrap" data-sub="${i.id}">${fmt(itemTotal(i))}</td>
+      <td class="py-1.5 text-right"><button class="p-1.5 text-slate-400 hover:text-rose-600" data-action="del-item" data-id="${i.id}" title="Eliminar ítem">✕</button></td>
+    </tr>`;
+}
+
+function itemsTableHtml(cat) {
+  const items = state.items.filter(i => i.cat === cat);
+  const sym = CUR[state.view].sym;
+  return `
+    <div class="card mb-4">
+      <div class="px-4 py-3 border-b flex items-center justify-between gap-2">
+        <h2 class="font-bold">${CATS[cat].label}</h2>
+        <span class="text-sm font-semibold text-indigo-700 tabular-nums" data-cattotal="${cat}">${fmt(calc().cat[cat])}</span>
+      </div>
+      <div class="overflow-x-auto scroll-thin px-3">
+        <table class="w-full text-sm min-w-[640px]">
+          <thead><tr>
+            <th class="th">Ítem</th><th class="th w-20 text-right">Cant.</th><th class="th w-20 text-right">Días</th>
+            <th class="th w-36 text-right">Unitario (${sym})</th><th class="th w-36 text-right">Subtotal</th><th class="w-8"></th>
+          </tr></thead>
+          <tbody>${items.length ? items.map(itemRowHtml).join('') :
+            `<tr><td colspan="6" class="py-6 text-center text-slate-400 text-sm">Aún no hay ítems en esta categoría.</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div class="p-3 border-t">
+        <button class="btn-light" data-action="add-item" data-cat="${cat}">+ Agregar nuevo ítem</button>
+      </div>
+    </div>`;
+}
+
+function preproTotalHtml() {
+  const c = calc();
+  return `<div class="card px-4 py-3 flex items-center justify-between font-bold">
+    <span>Total Pre-producción + Producción</span>
+    <span class="tabular-nums" data-prepro-total>${fmt(c.cat.preprod + c.cat.prod)}</span></div>`;
+}
+
+/* ----- 6.3 Ejecutable (presupuestado vs. real) ----- */
+function varHtml(v) {
+  if (Math.abs(v) < 0.005) return `<span class="text-slate-500">En línea</span>`;
+  return v > 0
+    ? `<span class="text-emerald-600 font-semibold">Ahorro ${fmt(v)}</span>`
+    : `<span class="text-rose-600 font-semibold">Sobregiro ${fmt(-v)}</span>`;
+}
+const execPct = (budget, real) => budget ? `${(real / budget * 100).toFixed(0)}%` : (real ? '∞' : '0%');
+
+/** Valores calculados del Ejecutable, indexados para poder actualizarlos sin re-renderizar los inputs */
+function ejValues() {
+  const c = calc(), o = {};
+  CAT_ORDER.forEach(k => {
+    o['b-' + k] = fmt(c.cat[k]);
+    o['r-' + k] = fmt(c.realCat[k]);
+    o['v-' + k] = varHtml(c.cat[k] - c.realCat[k]);
+  });
+  o['b-all'] = fmt(c.direct); o['r-all'] = fmt(c.realAll); o['v-all'] = varHtml(c.variance);
+  o['p-all'] = execPct(c.direct, c.realAll);
+  o['margin'] = fmt(c.margin);
+  o['base'] = fmt(c.base);
+  state.items.forEach(i => { o['v-' + i.id] = varHtml(itemTotal(i) - i.real); o['p-' + i.id] = execPct(itemTotal(i), i.real); });
+  return o;
+}
+
+function ejecutableHtml() {
+  const o = ejValues();
+  const blocks = CAT_ORDER.map(k => {
+    const items = state.items.filter(i => i.cat === k);
+    return `
+      <tr class="bg-slate-50"><td colspan="5" class="px-3 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">${CATS[k].label}</td></tr>
+      ${items.map(i => `
+        <tr class="border-b border-slate-100">
+          <td class="px-3 py-1.5">${esc(i.name) || '<i class="text-slate-400">Sin nombre</i>'}</td>
+          <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">${fmt(itemTotal(i))}</td>
+          <td class="px-2 py-1.5"><input type="number" min="0" step="0.01" class="inp text-right" data-id="${i.id}" data-field="real" value="${round2(conv(i.real))}"></td>
+          <td class="px-3 py-1.5 text-right text-xs text-slate-500" data-ej="p-${i.id}">${o['p-' + i.id]}</td>
+          <td class="px-3 py-1.5 text-right whitespace-nowrap" data-ej="v-${i.id}">${o['v-' + i.id]}</td>
+        </tr>`).join('') || `<tr><td colspan="5" class="px-3 py-1.5 text-xs italic text-slate-400">Sin ítems</td></tr>`}
+      <tr class="border-b border-slate-200 font-semibold">
+        <td class="px-3 py-1.5">Subtotal</td>
+        <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap" data-ej="b-${k}">${o['b-' + k]}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums whitespace-nowrap" data-ej="r-${k}">${o['r-' + k]}</td>
+        <td></td>
+        <td class="px-3 py-1.5 text-right whitespace-nowrap" data-ej="v-${k}">${o['v-' + k]}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+      <div class="card p-3"><div class="text-[11px] uppercase text-slate-500">Costo directo presupuestado</div><div class="text-lg font-bold tabular-nums" data-ej="b-all">${o['b-all']}</div></div>
+      <div class="card p-3"><div class="text-[11px] uppercase text-slate-500">Gasto real (<span data-ej="p-all">${o['p-all']}</span> ejecutado)</div><div class="text-lg font-bold tabular-nums" data-ej="r-all">${o['r-all']}</div></div>
+      <div class="card p-3"><div class="text-[11px] uppercase text-slate-500">Varianza</div><div class="text-lg" data-ej="v-all">${o['v-all']}</div></div>
+    </div>
+    <div class="card overflow-hidden">
+      <div class="px-4 py-3 border-b">
+        <h2 class="font-bold">Ejecutable · Control de gastos</h2>
+        <p class="text-xs text-slate-500">Registra lo gastado en cada ítem. Varianza = presupuestado − real (positivo = ahorro).</p>
+      </div>
+      <div class="overflow-x-auto scroll-thin">
+        <table class="w-full text-sm min-w-[680px]">
+          <thead><tr class="border-b">
+            <th class="th px-3">Ítem</th><th class="th px-3 text-right">Presupuestado</th><th class="th px-3 text-right w-40">Real (${CUR[state.view].sym})</th>
+            <th class="th px-3 text-right">Ejec.</th><th class="th px-3 text-right">Varianza</th>
+          </tr></thead>
+          <tbody>${blocks}</tbody>
+          <tbody class="border-t-2 border-slate-300 font-bold">
+            <tr><td class="px-3 py-2">TOTAL</td>
+              <td class="px-3 py-2 text-right tabular-nums" data-ej="b-all">${o['b-all']}</td>
+              <td class="px-3 py-2 text-right tabular-nums" data-ej="r-all">${o['r-all']}</td><td></td>
+              <td class="px-3 py-2 text-right" data-ej="v-all">${o['v-all']}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="px-4 py-3 border-t text-sm flex flex-wrap justify-between gap-2 bg-slate-50">
+        <span>Base facturada (sin impuestos): <b data-ej="base">${o['base']}</b></span>
+        <span>Utilidad real estimada (base − gasto real): <b data-ej="margin">${o['margin']}</b></span>
+      </div>
+    </div>`;
+}
+
+/* ---------------------------------------------------------------
+   7. CICLO DE RENDER / ACTUALIZACIÓN
+   --------------------------------------------------------------- */
+/** Render completo (cambio de moneda, carga de presupuesto, alta/baja de ítems) */
+function render() {
+  renderCurrencySwitch(); renderTotalsBar(); renderMeta(); renderVars(); renderRates(); renderTabs(); renderTab();
+  autosave();
+}
+
+/**
+ * Actualización ligera mientras el usuario escribe: recalcula y actualiza solo
+ * celdas calculadas, para no perder el foco del input que se está editando.
+ */
+function updateComputed() {
+  renderTotalsBar();
+  if (activeTab === 'sumario') renderTab();
+  const c = calc();
+  document.querySelectorAll('[data-sub]').forEach(el => { const i = findItem(el.dataset.sub); if (i) el.textContent = fmt(itemTotal(i)); });
+  document.querySelectorAll('[data-cattotal]').forEach(el => el.textContent = fmt(c.cat[el.dataset.cattotal]));
+  const pp = document.querySelector('[data-prepro-total]'); if (pp) pp.textContent = fmt(c.cat.preprod + c.cat.prod);
+  if (activeTab === 'ejecutable') {
+    const o = ejValues();
+    document.querySelectorAll('[data-ej]').forEach(el => { if (o[el.dataset.ej] !== undefined) el.innerHTML = o[el.dataset.ej]; });
+  }
+  autosave();
+}
+
+let saveTimer;
+function autosave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(LS_CURRENT, JSON.stringify(state)); } catch (e) { /* cuota llena */ } }, 300);
+}
+
+function toast(msg, ms = 2400) {
+  const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.add('hidden'), ms);
+}
+
+/* ---------------------------------------------------------------
+   8. GESTIÓN DE ÍTEMS
+   --------------------------------------------------------------- */
+function addItem(cat, name = '', qty = 1, days = 1, unitUSD = 0, focus = true) {
+  const it = newItem(cat, name, qty, days, unitUSD);
+  state.items.push(it);
+  return it;
+}
+function deleteItem(id) {
+  state.items = state.items.filter(i => i.id !== id);
+}
+
+/* ---------------------------------------------------------------
+   9. HISTORIAL / VERSIONAMIENTO (localStorage)
+   --------------------------------------------------------------- */
+function loadDB() { try { return JSON.parse(localStorage.getItem(LS_DB)) || []; } catch { return []; } }
+function storeDB(db) {
+  try { localStorage.setItem(LS_DB, JSON.stringify(db)); return true; }
+  catch (e) { toast('No hay espacio en el almacenamiento local.'); return false; }
+}
+
+/** Guarda (o actualiza) el presupuesto activo en la base local */
+function saveBudget() {
+  const db = loadDB();
+  const copy = JSON.parse(JSON.stringify(state));
+  copy.savedAt = new Date().toISOString();
+  const idx = db.findIndex(b => b.id === copy.id);
+  if (idx >= 0) db[idx] = copy;
+  else {
+    if (db.length >= MAX_BUDGETS) {
+      if (!confirm(`Llegaste al límite de ${MAX_BUDGETS} presupuestos. ¿Eliminar el más antiguo para guardar este?`)) return false;
+      db.sort((a, b) => (a.savedAt || '').localeCompare(b.savedAt || '')).shift();
+    }
+    db.push(copy);
+  }
+  if (!storeDB(db)) return false;
+  state.savedAt = copy.savedAt;
+  autosave();
+  toast('Presupuesto guardado en el historial');
+  if (!$('#historyDrawer').classList.contains('translate-x-full')) renderHistory();
+  return true;
+}
+
+/** "V1" → "V2", "Versión 3" → "Versión 4", "Final" → "Final (copia)" */
+function bumpVersion(v) {
+  const s = (v || 'V1').toString();
+  const m = s.match(/(\d+)(?!.*\d)/);
+  return m ? s.slice(0, m.index) + (+m[1] + 1) + s.slice(m.index + m[1].length) : s + ' (copia)';
+}
+
+function renderHistory() {
+  const db = loadDB().sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+  const f = norm($('#histFilter').value);
+  const list = db.filter(b => !f || norm([b.meta.cliente, b.meta.proyecto, b.meta.agencia, b.meta.version].join(' ')).includes(f));
+  $('#histCount').textContent = `${db.length} / ${MAX_BUDGETS} guardados`;
+  $('#histList').innerHTML = list.length ? list.map(b => {
+    const c = calc(hydrate(b)), cur = b.id === state.id;
+    return `
+      <div class="rounded-xl border ${cur ? 'border-indigo-400 bg-indigo-50/50' : 'border-slate-200'} p-3">
+        <div class="flex justify-between gap-2">
+          <div class="min-w-0">
+            <div class="font-semibold truncate">${esc(b.meta.proyecto || 'Sin título')}</div>
+            <div class="text-xs text-slate-500 truncate">${esc(b.meta.cliente || 'Sin cliente')} · ${esc(b.meta.agencia || '—')}</div>
+          </div>
+          <span class="shrink-0 h-fit text-[11px] font-semibold rounded-full bg-slate-900 text-white px-2 py-0.5">${esc(b.meta.version)}</span>
+        </div>
+        <div class="mt-1 flex justify-between text-xs text-slate-500">
+          <span>${b.savedAt ? new Date(b.savedAt).toLocaleString('es-VE') : ''}</span>
+          <span class="font-semibold text-slate-700">$ ${NF.format(c.total)}</span>
+        </div>
+        <div class="mt-2 flex gap-2">
+          <button class="btn-light !py-1 flex-1" data-action="load" data-id="${b.id}">${cur ? 'Abierto' : 'Cargar'}</button>
+          <button class="btn-light !py-1 flex-1" data-action="dup" data-id="${b.id}">Duplicar</button>
+          <button class="btn-light !py-1 text-rose-600" data-action="del-budget" data-id="${b.id}">Eliminar</button>
+        </div>
+      </div>`;
+  }).join('') : `<p class="text-center text-sm text-slate-400 py-10">${db.length ? 'Sin resultados para el filtro.' : 'Aún no has guardado presupuestos.'}</p>`;
+}
+
+function openHistory(open) {
+  $('#historyDrawer').classList.toggle('translate-x-full', !open);
+  $('#drawerOverlay').classList.toggle('hidden', !open);
+  if (open) renderHistory();
+}
+
+/* ---------------------------------------------------------------
+   10. IMPORTACIÓN DE TEXTO (Data Parsing)
+   --------------------------------------------------------------- */
+// Palabras clave para clasificar automáticamente cuando no hay encabezado
+const CAT_KEYWORDS = {
+  post:    ['post', 'edicion', 'editor', 'montaje', 'color', 'retoque', 'animacion', 'motion', 'vfx', 'musica', 'sonoro', 'mezcla', 'subtitul', 'locucion', '3d'],
+  hon:     ['honorario', 'fee', 'director', 'dp', 'fotografo', 'productor', 'asistente', 'gaffer', 'maquill', 'estilista', 'vestuar', 'camarografo', 'sonidista', 'script', 'continuista'],
+  preprod: ['pre-produccion', 'preproduccion', 'scouting', 'scout', 'casting', 'storyboard', 'guion', 'ppm', 'permiso', 'reunion'],
+};
+
+/** Detecta si un texto corto es un encabezado de categoría (ej: "POST PRODUCCIÓN") */
+function headerCat(txt) {
+  const t = norm(txt).trim();
+  if (/^post/.test(t)) return 'post';
+  if (/^pre[\s-]?prod/.test(t)) return 'preprod';
+  if (/^(honorario|fee)/.test(t)) return 'hon';
+  if (/^prod/.test(t)) return 'prod';
+  return null;
+}
+
+/** Clasifica un ítem por palabras clave en su nombre */
+function autoCat(name) {
+  const t = ' ' + norm(name).replace(/[^a-z0-9-]+/g, ' ') + ' ';
+  for (const cat of ['post', 'hon', 'preprod']) {
+    if (CAT_KEYWORDS[cat].some(k => k.length <= 3 ? t.includes(' ' + k + ' ') : t.includes(k))) return cat;
+  }
+  return 'prod';
+}
+
+/**
+ * Analiza una línea de texto y devuelve { name, cat, qty, days, unit(USD) },
+ * { header: cat } si es un encabezado, o null si está vacía.
+ * Reglas: número seguido de "días/jornadas" = días; seguido de "x/pax/und/personas" = cantidad;
+ * precedido de $/Bs/€ = precio. Los demás se asignan como: último = precio, luego cantidad, luego días.
+ */
+function parseLine(line, currentCat) {
+  let s = line.replace(/^\s*([-*•·]|\d+[.)])\s+/, '').trim();
+  if (!s) return null;
+
+  let cat = null;
+  const pm = s.match(/^([^:\d]{2,40}):\s*(.*)$/);
+  if (pm) {
+    const hc = headerCat(pm[1]);
+    if (hc) { if (!pm[2].trim()) return { header: hc }; cat = hc; s = pm[2].trim(); } // "PRODUCCIÓN:" solo = encabezado
+  }
+  if (!/\d/.test(s)) {
+    const hc = headerCat(s.replace(/[:\-–]+$/, ''));
+    if (hc && s.length < 40) return { header: hc };
+    if (!s) return null;
+  }
+
+  const ns = norm(s);
+  let cur = state.view;
+  if (/\bbs\b|bs\.|bolivar/.test(ns)) cur = 'VES';
+  else if (/€|\beur\b|euro/.test(ns)) cur = 'EUR';
+  else if (/\$|\busd\b|dolar/.test(ns)) cur = 'USD';
+
+  const toks = []; const re = /\d[\d.,]*/g; let m;
+  while ((m = re.exec(s))) {
+    const end = m.index + m[0].length;
+    toks.push({ v: parseNum(m[0]), idx: m.index, after: norm(s.slice(end, end + 14)), before: norm(s.slice(Math.max(0, m.index - 5), m.index)), used: false });
+  }
+
+  let qty = null, days = null, unit = null;
+  toks.forEach(t => {
+    if (/^\s*(dias?\b|jornadas?|d\b)/.test(t.after)) { days = t.v; t.used = true; }
+    else if (/^\s*(pax|und|unid|uds|pers|personas|piezas|imagenes|fotos)/.test(t.after)) { qty = t.v; t.used = true; }
+    else if (/(\$|bs\.?|€|usd|eur)\s*$/.test(t.before) || /^\s*(\$|usd|bs|€|eur)/.test(t.after)) { unit = t.v; t.used = true; }
+    else if (/^\s*[x×*]/.test(t.after) && t !== toks[toks.length - 1]) {
+      if (qty === null) qty = t.v; else if (days === null) days = t.v; else return;
+      t.used = true;
+    }
+  });
+  const free = toks.filter(t => !t.used).map(t => t.v);
+  if (unit === null && free.length) unit = free.pop();
+  if (qty === null && free.length) qty = free.shift();
+  if (days === null && free.length) days = free.shift();
+
+  let name = (toks.length ? s.slice(0, toks[0].idx) : s)
+    .replace(/(\$|us\$|usd|bs\.?|€|eur)\s*$/i, '')
+    .replace(/[\s:\-–=,(]+$/, '').trim() || 'Ítem importado';
+
+  return {
+    name, cat: cat || currentCat || autoCat(name),
+    qty: qty ?? 1, days: days ?? 1, unit: round2(fromView(unit ?? 0, cur)) || 0, cur,
+  };
+}
+
+/** Recorre el texto completo, respetando encabezados de categoría */
+function parseRequirements(text) {
+  let current = null; const out = [];
+  text.split(/\r?\n/).forEach(line => {
+    const r = parseLine(line, current);
+    if (!r) return;
+    if (r.header) { current = r.header; return; }
+    out.push(r);
+  });
+  return out;
+}
+
+function renderImportPreview() {
+  const el = $('#importPreview');
+  if (!importPreview.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="rounded-lg border border-slate-200 overflow-hidden">
+      <div class="px-2 py-1.5 bg-slate-50 text-xs font-semibold">${importPreview.length} ítems detectados (revisa la categoría)</div>
+      <div class="max-h-64 overflow-y-auto scroll-thin divide-y">
+        ${importPreview.map((r, i) => `
+          <div class="p-2 text-xs space-y-1">
+            <div class="flex justify-between gap-2"><b class="truncate">${esc(r.name)}</b><span class="tabular-nums whitespace-nowrap">${r.qty}×${r.days}×${fmt(r.unit)}</span></div>
+            <select class="inp !py-1 !text-xs" data-imp-cat="${i}">
+              ${CAT_ORDER.map(c => `<option value="${c}" ${r.cat === c ? 'selected' : ''}>${CATS[c].label}</option>`).join('')}
+            </select>
+          </div>`).join('')}
+      </div>
+      <div class="p-2 flex gap-2 border-t">
+        <button class="btn-pri flex-1 !py-1.5" data-action="import-confirm">Insertar ítems</button>
+        <button class="btn-light !py-1.5" data-action="import-cancel">Descartar</button>
+      </div>
+    </div>`;
+}
+
+/* ---------------------------------------------------------------
+   11. EXPORTACIÓN A PDF (html2pdf.js)
+   Se construye un documento limpio con estilos en línea (sin botones
+   ni inputs) a partir de los datos del Sumario.
+   --------------------------------------------------------------- */
+function buildPdfElement() {
+  const c = calc(), m = state.meta, v = state.vars;
+  const td = 'padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:11px;';
+  const tr = 'text-align:right;white-space:nowrap;';
+
+  let rows = '';
+  CAT_ORDER.forEach(k => {
+    rows += `<tr><td colspan="3" style="${td}background:#f1f5f9;font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#334155">${CATS[k].label}</td></tr>`;
+    const items = state.items.filter(i => i.cat === k);
+    rows += items.length ? items.map(i => `<tr>
+        <td style="${td}">${esc(i.name)}</td>
+        <td style="${td}${tr}color:#64748b">${i.qty} × ${i.days}</td>
+        <td style="${td}${tr}">${fmt(itemTotal(i))}</td></tr>`).join('')
+      : `<tr><td colspan="3" style="${td}color:#94a3b8;font-style:italic">Sin ítems</td></tr>`;
+    rows += `<tr><td colspan="2" style="${td}font-weight:700">Subtotal ${CATS[k].label}</td><td style="${td}${tr}font-weight:700">${fmt(c.cat[k])}</td></tr>`;
+  });
+
+  const cl = (l, val, b) => `<tr><td colspan="2" style="${td}${b ? 'font-weight:700;' : ''}">${l}</td><td style="${td}${tr}${b ? 'font-weight:700;' : ''}">${fmt(val)}</td></tr>`;
+  rows += `<tr><td colspan="3" style="height:10px"></td></tr>` +
+    cl('Costo directo', c.direct, true) +
+    cl(`Markup general (${v.markup}%)`, c.markupGen) +
+    cl(`Markup extra honorarios (${v.markupHon}%)`, c.markupHon) +
+    cl('Subtotal con markup', c.subMarkup, true) +
+    cl(`Agencia (${v.agency}%)`, c.agency) +
+    cl('Montos extras', c.extras) +
+    cl('Base imponible', c.base, true) +
+    cl(`Impuestos (${v.tax}%)`, c.tax) +
+    `<tr><td colspan="2" style="padding:10px;background:#4f46e5;color:#fff;font-weight:800;font-size:13px">TOTAL</td>
+         <td style="padding:10px;background:#4f46e5;color:#fff;font-weight:800;font-size:13px;${tr}">${fmt(c.total)}</td></tr>`;
+
+  const metaCell = (l, val) => `<td style="padding:4px 0;font-size:10px;color:#64748b;width:18%">${l}</td><td style="padding:4px 8px 4px 0;font-size:11px;font-weight:600;width:32%">${esc(val) || '—'}</td>`;
+  const rv = rateObj('VES'), re = rateObj('EUR');
+  const el = document.createElement('div');
+  el.innerHTML = `
+    <div style="font-family:Helvetica,Arial,sans-serif;color:#0f172a;padding:8px 4px;width:740px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #4f46e5;padding-bottom:10px;margin-bottom:12px">
+        <div>
+          <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#4f46e5;font-weight:700">${APP_NAME}</div>
+          <div style="font-size:20px;font-weight:800;margin-top:2px">${esc(m.proyecto || 'Presupuesto')}</div>
+        </div>
+        <div style="text-align:right;font-size:11px;color:#475569">Presupuesto ${esc(m.version)}<br>${esc(m.fecha)}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:14px">
+        <tr>${metaCell('Cliente', m.cliente)}${metaCell('Agencia', m.agencia)}</tr>
+        <tr>${metaCell('Derechos', m.derechos)}${metaCell('Duración', m.duracion)}</tr>
+        <tr>${metaCell('N° de días', m.dias)}${metaCell('Moneda', CUR[state.view].label)}</tr>
+      </table>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="text-align:left;font-size:9px;text-transform:uppercase;color:#64748b;padding:6px 10px;border-bottom:2px solid #cbd5e1">Concepto</th>
+          <th style="text-align:right;font-size:9px;text-transform:uppercase;color:#64748b;padding:6px 10px;border-bottom:2px solid #cbd5e1">Cant × Días</th>
+          <th style="text-align:right;font-size:9px;text-transform:uppercase;color:#64748b;padding:6px 10px;border-bottom:2px solid #cbd5e1">Monto</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="margin-top:14px;font-size:9px;color:#64748b;line-height:1.5">
+        ${state.view !== 'USD' ? `Montos convertidos con ${state.view === 'VES' ? `${esc(rv?.label)} (1 USD = Bs ${NF.format(rv?.value || 0)})` : `${esc(re?.label)} (1 USD = € ${NF.format(re?.value || 0)})`}. ` : ''}
+        Referencia: Total equivalente ${fmt(c.total, 'USD')} · ${fmt(c.total, 'VES')} · ${fmt(c.total, 'EUR')}.
+      </div>
+    </div>`;
+  return el;
+}
+
+function exportPDF() {
+  if (typeof html2pdf === 'undefined') {
+    toast('No se pudo cargar html2pdf.js (¿sin internet?). Se abrirá la impresión del navegador.');
+    setTimeout(() => window.print(), 600);
+    return;
+  }
+  const m = state.meta;
+  toast('Generando PDF…');
+  html2pdf().set({
+    margin: [10, 10, 12, 10],
+    filename: `Presupuesto_${slug(m.proyecto)}_${slug(m.version)}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['avoid-all', 'css'] },
+  }).from(buildPdfElement()).save().then(() => toast('PDF descargado'));
+}
+
+/* ---------------------------------------------------------------
+   12. CHATBOT ASISTENTE
+   Arquitectura: (texto) → intérprete local u OpenAI → lista de ACCIONES
+   → (confirmación si son cambios grandes) → ejecutor único de acciones.
+   Acciones soportadas:
+     add_amount  {category?, item_name?, amount_usd}
+     add_item    {category, name, qty, days, unit_usd}
+     set_var     {key: markup|markupHon|agency|tax|extras, value, delta?}
+     set_currency{currency: VES|USD|EUR}
+     set_meta    {field, value}
+     export_pdf | save | summary
+   --------------------------------------------------------------- */
+const ACTION_TYPES = ['add_amount', 'add_item', 'set_var', 'set_currency', 'set_meta', 'export_pdf', 'save', 'summary'];
+
+function getAI() { try { return JSON.parse(localStorage.getItem(LS_AI)) || {}; } catch { return {}; } }
+
+function addMsg(role, text) {
+  const box = $('#chatMessages');
+  const html = esc(text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+  box.insertAdjacentHTML('beforeend', role === 'user'
+    ? `<div class="flex justify-end"><div class="max-w-[85%] rounded-2xl rounded-br-sm bg-indigo-600 text-white px-3 py-2 text-sm">${html}</div></div>`
+    : `<div class="flex"><div class="max-w-[90%] rounded-2xl rounded-bl-sm bg-white border border-slate-200 px-3 py-2 text-sm">${html}</div></div>`);
+  box.scrollTop = box.scrollHeight;
+  chat.history.push({ role: role === 'user' ? 'user' : 'assistant', content: text });
+  if (chat.history.length > 20) chat.history.splice(0, chat.history.length - 20);
+}
+
+const helpText = () =>
+`Puedo ayudarte con comandos como:
+• "Añade $500 a Post Producción"
+• "Agrega 200 a Casting" (suma a un ítem existente)
+• "Nuevo ítem "Drone" en producción por 300"
+• "Cambia el markup a 20%" / "Agencia 12%" / "Impuestos 16%"
+• "Markup honorarios 15%" · "Sube el markup en 5"
+• "Muestra en bolívares / euros / dólares"
+• "Resumen" · "Guardar" · "Descarga el PDF"
+Los cambios de porcentaje grandes te los pediré confirmar.`;
+
+/** Detecta categoría mencionada en el texto normalizado */
+function detectCat(t) {
+  if (/post/.test(t)) return 'post';
+  if (/pre[\s-]?produc|preprod/.test(t)) return 'preprod';
+  if (/honorario|\bfees?\b/.test(t)) return 'hon';
+  if (/produc/.test(t)) return 'prod';
+  return null;
+}
+/** Detecta qué variable global se menciona */
+function detectVarKey(t) {
+  if (/agencia/.test(t)) return 'agency';
+  if (/impuesto|\biva\b|\btax\b/.test(t)) return 'tax';
+  if (/(markup|margen)/.test(t) && /honorario/.test(t)) return 'markupHon';
+  if (/(markup|margen)/.test(t)) return 'markup';
+  if (/montos? extras?/.test(t)) return 'extras';
+  return null;
+}
+/** Busca un ítem existente cuyo nombre aparezca en el texto (el nombre más largo gana) */
+function findItemInText(t) {
+  return [...state.items].sort((a, b) => b.name.length - a.name.length)
+    .find(i => norm(i.name).length >= 4 && t.includes(norm(i.name)));
+}
+/** Extrae un monto y lo convierte a USD según el símbolo encontrado */
+function extractAmountUSD(t) {
+  const m = t.match(/(us\$|\$|usd|€|eur|euros?|bs\.?|bolivares)?\s*(\d[\d.,]*)\s*(usd|dolares?|\$|€|eur|euros?|bs\.?|bolivares)?/);
+  if (!m) return null;
+  const tag = (m[1] || m[3] || '');
+  const cur = /bs|bolivar/.test(tag) ? 'VES' : /€|eur/.test(tag) ? 'EUR' : /\$|usd|dolar/.test(tag) ? 'USD' : state.view;
+  return { usd: fromView(parseNum(m[2]), cur), raw: parseNum(m[2]), cur };
+}
+
+/** Intérprete local de lenguaje natural (sin API) */
+function localParse(raw) {
+  const t = norm(raw).trim();
+  if (/\b(ayuda|help|que puedes|comandos)\b/.test(t)) return { actions: [], reply: helpText() };
+  if (/\bpdf\b|exporta|descarga|imprim/.test(t)) return { actions: [{ type: 'export_pdf' }] };
+  if (/\b(guarda|guardar|salva|salvar)\b/.test(t)) return { actions: [{ type: 'save' }] };
+
+  // Cambio de moneda (sin números en el mensaje)
+  if (!/\d/.test(t)) {
+    const cur = /bolivar|\bbs\b/.test(t) ? 'VES' : /euro|\beur\b/.test(t) ? 'EUR' : /dolar|\busd\b/.test(t) ? 'USD' : null;
+    if (cur) return { actions: [{ type: 'set_currency', currency: cur }] };
+  }
+
+  const isAdd = /\b(anade|anadir|agrega|agregar|suma|sumale|sumar|incluye|mete)\b/.test(t);
+  const varKey = detectVarKey(t);
+
+  // Variables globales: "markup 20%", "sube la agencia en 5", "impuestos a 16"
+  if (varKey && varKey !== 'extras' && !isAdd) {
+    const nums = t.match(/\d+(?:[.,]\d+)?/g);
+    if (!nums) return { actions: [], reply: `¿A qué porcentaje quieres llevar ${VAR_DEFS[varKey].label.replace('% ', '')}?` };
+    const n = parseNum(nums[nums.length - 1]);
+    const cur = +state.vars[varKey] || 0;
+    let value = n;
+    if (/\b(sube|subir|aumenta|incrementa)\b.*\ben\b/.test(t)) value = cur + n;
+    else if (/\b(baja|bajar|reduce|disminuye|resta)\b.*\ben\b/.test(t)) value = Math.max(0, cur - n);
+    return { actions: [{ type: 'set_var', key: varKey, value: round2(value) }] };
+  }
+
+  // Montos extras: "pon montos extras en 300" / "añade 300 a montos extras"
+  if (varKey === 'extras') {
+    const a = extractAmountUSD(t);
+    if (!a) return { actions: [], reply: '¿Qué monto extra quieres aplicar?' };
+    const value = isAdd ? (+state.vars.extras || 0) + a.usd : a.usd;
+    return { actions: [{ type: 'set_var', key: 'extras', value }] };
+  }
+
+  // Agregar montos o ítems
+  if (isAdd || /\b(nuevo|crea|crear)\b/.test(t)) {
+    const a = extractAmountUSD(t.replace(/"[^"]*"|“[^”]*”/g, ''));
+    const cat = detectCat(t);
+    if (/\b(item|partida|rubro|linea|concepto)\b/.test(t) && cat) {
+      const q = raw.match(/["“]([^"”]+)["”]/);
+      const name = q ? q[1] : 'Nuevo ítem';
+      return { actions: [{ type: 'add_item', category: cat, name, qty: 1, days: 1, unit_usd: a ? a.usd : 0 }] };
+    }
+    if (!a) return { actions: [], reply: '¿Qué monto quieres añadir? Ej: "Añade $500 a Post Producción".' };
+    const it = findItemInText(t);
+    if (it) return { actions: [{ type: 'add_amount', item_name: it.name, amount_usd: a.usd }] };
+    if (cat) return { actions: [{ type: 'add_amount', category: cat, amount_usd: a.usd }] };
+    return { actions: [], reply: '¿A qué categoría o ítem lo añado? (Pre-producción, Producción, Honorarios o Post Producción)' };
+  }
+
+  if (/\b(resumen|resume|resumir|total|cuanto|estado)\b/.test(t)) return { actions: [{ type: 'summary' }] };
+  return { actions: [], reply: 'No entendí la instrucción.\n\n' + helpText() };
+}
+
+/** Llamada opcional a OpenAI: devuelve las mismas acciones que el intérprete local */
+async function callOpenAI(text, ai) {
+  const c = calc();
+  const ctx = {
+    meta: state.meta, vars: state.vars, view_currency: state.view,
+    rates: { VES_per_USD: rateFor('VES'), EUR_per_USD: rateFor('EUR') },
+    items: state.items.map(i => ({ cat: i.cat, name: i.name, qty: i.qty, days: i.days, unit_usd: round2(i.unit) })),
+    totals_usd: { direct: round2(c.direct), total: round2(c.total) },
+  };
+  const sys = `Eres el asistente de "${APP_NAME}", un cotizador de producción audiovisual. Responde SIEMPRE en español y SOLO con JSON válido con la forma {"reply": string, "actions": array}.
+Acciones permitidas:
+- {"type":"add_amount","category":"preprod|prod|hon|post","amount_usd":number}  (crea un ítem de ajuste en la categoría)
+- {"type":"add_amount","item_name":string,"amount_usd":number}  (suma al subtotal de un ítem existente)
+- {"type":"add_item","category":"preprod|prod|hon|post","name":string,"qty":number,"days":number,"unit_usd":number}
+- {"type":"set_var","key":"markup|markupHon|agency|tax|extras","value":number}  (porcentajes como número; extras en USD)
+- {"type":"set_currency","currency":"VES|USD|EUR"}
+- {"type":"set_meta","field":"cliente|agencia|proyecto|version|derechos|fecha|duracion|dias","value":string}
+- {"type":"export_pdf"} | {"type":"save"} | {"type":"summary"}
+Todos los montos van en USD: si el usuario habla en Bs o € convierte con las tasas dadas. Si no indica moneda, asume la moneda de vista (${state.view}).
+No pidas confirmación tú: la app la solicita automáticamente para cambios grandes. Si la petición no es una acción, responde en "reply" con "actions": [].`;
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + ai.key },
+    body: JSON.stringify({
+      model: ai.model || 'gpt-4o-mini', temperature: 0.2, response_format: { type: 'json_object' },
+      messages: [{ role: 'system', content: sys }, { role: 'system', content: 'Presupuesto actual: ' + JSON.stringify(ctx) },
+                 ...chat.history.slice(-8, -1), { role: 'user', content: text }],
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI respondió ${res.status}`);
+  const data = await res.json();
+  const parsed = JSON.parse(data.choices[0].message.content || '{}');
+  const actions = (Array.isArray(parsed.actions) ? parsed.actions : []).filter(a => a && ACTION_TYPES.includes(a.type));
+  return { actions, reply: parsed.reply || '' };
+}
+
+/** ¿Esta acción es "grande" y requiere confirmación? */
+function needsConfirm(a) {
+  if (a.type === 'set_var' && VAR_DEFS[a.key]?.pct) {
+    const cur = +state.vars[a.key] || 0;
+    return +a.value >= BIG_PCT_VALUE || Math.abs(+a.value - cur) >= BIG_PCT_JUMP;
+  }
+  const amt = a.type === 'add_amount' ? +a.amount_usd : a.type === 'add_item' ? (+a.unit_usd || 0) * (+a.qty || 1) * (+a.days || 1) : 0;
+  const total = calc().total;
+  return amt > 0 && total > 0 && amt > total * BIG_AMOUNT_RATIO;
+}
+
+/** Descripción legible de una acción (para resumen / confirmación) */
+function describe(a) {
+  switch (a.type) {
+    case 'add_amount': return a.item_name ? `Sumar ${fmt(a.amount_usd)} al ítem "${a.item_name}"` : `Agregar ${fmt(a.amount_usd)} a ${CATS[a.category]?.label || a.category}`;
+    case 'add_item':   return `Crear ítem "${a.name}" en ${CATS[a.category]?.label} (${a.qty || 1} × ${a.days || 1} × ${fmt(a.unit_usd || 0)})`;
+    case 'set_var':    return VAR_DEFS[a.key]?.pct ? `${VAR_DEFS[a.key].label}: ${state.vars[a.key]}% → ${a.value}%` : `Montos extras: ${fmt(state.vars.extras)} → ${fmt(a.value)}`;
+    case 'set_currency': return `Mostrar montos en ${CUR[a.currency]?.label}`;
+    case 'set_meta':   return `${a.field}: "${a.value}"`;
+    case 'export_pdf': return 'Descargar el PDF del Sumario';
+    case 'save':       return 'Guardar en el historial';
+    case 'summary':    return 'Mostrar resumen';
+  }
+  return a.type;
+}
+
+function summaryText() {
+  const c = calc();
+  return `**Resumen ${state.meta.proyecto} (${state.meta.version})**
+${CAT_ORDER.map(k => `• ${CATS[k].label}: ${fmt(c.cat[k])}`).join('\n')}
+• Costo directo: ${fmt(c.direct)}
+• Markup + agencia + extras: ${fmt(c.base - c.direct)}
+• Impuestos: ${fmt(c.tax)}
+**TOTAL: ${fmt(c.total)}**`;
+}
+
+/** Ejecutor único: aplica una acción sobre el estado y devuelve un texto de resultado */
+function applyAction(a) {
+  switch (a.type) {
+    case 'add_amount': {
+      const amt = +a.amount_usd || 0;
+      if (a.item_name) {
+        const it = state.items.find(i => norm(i.name) === norm(a.item_name)) || state.items.find(i => norm(i.name).includes(norm(a.item_name)));
+        if (it) {
+          const factor = (+it.qty || 1) * (+it.days || 1);
+          if (!it.qty) it.qty = 1; if (!it.days) it.days = 1;
+          it.unit = (+it.unit || 0) + amt / factor;
+          return `✓ ${it.name}: +${fmt(amt)} (nuevo subtotal ${fmt(itemTotal(it))})`;
+        }
+        if (!a.category) return `✗ No encontré el ítem "${a.item_name}".`;
+      }
+      if (!CATS[a.category]) return '✗ Categoría no válida.';
+      addItem(a.category, 'Ajuste (asistente)', 1, 1, amt);
+      return `✓ ${CATS[a.category].label}: nuevo ítem "Ajuste (asistente)" por ${fmt(amt)}`;
+    }
+    case 'add_item':
+      if (!CATS[a.category]) return '✗ Categoría no válida.';
+      addItem(a.category, a.name || 'Nuevo ítem', +a.qty || 1, +a.days || 1, +a.unit_usd || 0);
+      return `✓ Ítem "${a.name}" creado en ${CATS[a.category].label}`;
+    case 'set_var':
+      if (!VAR_DEFS[a.key]) return '✗ Variable no válida.';
+      state.vars[a.key] = Math.max(0, +a.value || 0);
+      return `✓ ${VAR_DEFS[a.key].label} actualizado`;
+    case 'set_currency':
+      if (!CUR[a.currency]) return '✗ Moneda no válida.';
+      state.view = a.currency; return `✓ Mostrando montos en ${CUR[a.currency].label}`;
+    case 'set_meta':
+      if (!(a.field in state.meta)) return '✗ Campo no válido.';
+      state.meta[a.field] = a.value; return `✓ ${a.field} actualizado`;
+    case 'save':       return saveBudget() ? '✓ Guardado en el historial' : '✗ No se guardó';
+    case 'export_pdf': setTimeout(exportPDF, 200); return '✓ Generando y descargando el PDF…';
+    case 'summary':    return summaryText();
+  }
+  return '✗ Acción desconocida';
+}
+
+function applyActions(actions) {
+  const out = actions.map(applyAction);
+  render();
+  const changed = actions.some(a => !['summary', 'export_pdf', 'save'].includes(a.type));
+  return out.join('\n') + (changed ? `\n\nNuevo total: **${fmt(calc().total)}**` : '');
+}
+
+/** Decide si aplica directo o pide confirmación con un resumen de cambios */
+function processActions(actions, reply) {
+  if (!actions.length) { addMsg('bot', reply || helpText()); return; }
+  if (actions.some(needsConfirm)) {
+    chat.pending = actions;
+    addMsg('bot', `${reply ? reply + '\n\n' : ''}Resumen de cambios propuestos:\n${actions.map(a => '• ' + describe(a)).join('\n')}\n\n⚠️ Incluye cambios grandes. ¿Confirmas? (sí / no)`);
+    return;
+  }
+  addMsg('bot', (reply ? reply + '\n\n' : '') + applyActions(actions));
+}
+
+async function handleChat(text) {
+  addMsg('user', text);
+  const t = norm(text).trim();
+
+  // Respuesta a una confirmación pendiente
+  if (chat.pending) {
+    if (/^(si|s|dale|ok|okay|confirmo|confirmar|aplica|adelante|de acuerdo|hazlo)\b/.test(t)) {
+      const acts = chat.pending; chat.pending = null;
+      addMsg('bot', applyActions(acts)); return;
+    }
+    if (/^(no|cancela|cancelar|olvidalo|mejor no)\b/.test(t)) { chat.pending = null; addMsg('bot', 'Listo, no apliqué ningún cambio.'); return; }
+    chat.pending = null; // el usuario cambió de tema
+  }
+
+  const ai = getAI();
+  if (ai.key) {
+    try {
+      $('#chatMode').textContent = 'Pensando…';
+      const r = await callOpenAI(text, ai);
+      processActions(r.actions, r.reply);
+    } catch (e) {
+      addMsg('bot', `No pude contactar a OpenAI (${e.message}). Uso el intérprete local:`);
+      const r = localParse(text); processActions(r.actions, r.reply);
+    } finally { updateChatMode(); }
+  } else {
+    const r = localParse(text); processActions(r.actions, r.reply);
+  }
+}
+
+function updateChatMode() {
+  const ai = getAI();
+  $('#chatMode').textContent = ai.key ? `Modo OpenAI · ${ai.model || 'gpt-4o-mini'}` : 'Modo local (sin API)';
+}
+
+function initChat() {
+  const chips = ['Añade $500 a Post Producción', 'Cambia el markup a 25%', 'Resumen', 'Muestra en bolívares', 'Descarga el PDF', 'Ayuda'];
+  $('#chatChips').innerHTML = chips.map(c => `<button class="shrink-0 text-xs rounded-full border border-slate-300 px-2.5 py-1 hover:bg-slate-100" data-action="chip" data-text="${esc(c)}">${esc(c)}</button>`).join('');
+  const ai = getAI(); $('#aiKey').value = ai.key || ''; $('#aiModel').value = ai.model || '';
+  updateChatMode();
+  addMsg('bot', `¡Hola! Soy el asistente de ${APP_NAME}. Puedo modificar el presupuesto, resumirlo y descargar el PDF.\nEscribe "ayuda" para ver ejemplos.`);
+  $('#chatForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = $('#chatInput').value.trim(); if (!v) return;
+    $('#chatInput').value = ''; handleChat(v);
+  });
+}
+
+/* ---------------------------------------------------------------
+   13. EVENTOS (delegación global)
+   --------------------------------------------------------------- */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-action]');
+  if (!b) return;
+  const id = b.dataset.id;
+  switch (b.dataset.action) {
+    case 'tab': activeTab = b.dataset.tab; renderTabs(); renderTab(); break;
+    case 'currency': state.view = b.dataset.cur; render(); break;
+
+    case 'add-item': {
+      const it = addItem(b.dataset.cat);
+      render();
+      document.querySelector(`[data-id="${it.id}"][data-field="name"]`)?.focus();
+      break;
+    }
+    case 'del-item': {
+      const it = findItem(id);
+      if (it && (!it.name && !it.unit || confirm(`¿Eliminar "${it.name || 'ítem sin nombre'}"?`))) { deleteItem(id); render(); }
+      break;
+    }
+
+    case 'add-rate': state.rates.push({ id: uid(), label: 'Nueva tasa', cur: 'VES', value: 1 }); renderRates(); autosave(); break;
+    case 'del-rate':
+      if (state.rates.length <= 1) return toast('Debe existir al menos una tasa.');
+      state.rates = state.rates.filter(r => r.id !== id);
+      ['VES', 'EUR'].forEach(c => { if (state.activeRate[c] === id) state.activeRate[c] = state.rates.find(r => r.cur === c)?.id; });
+      render(); break;
+
+    case 'save': saveBudget(); break;
+    case 'new':
+      if (confirm('¿Crear un presupuesto nuevo en blanco? (Guarda antes el actual si lo necesitas)')) { state = blankBudget(); activeTab = 'prepro'; render(); toast('Nuevo presupuesto creado'); }
+      break;
+    case 'export': exportPDF(); break;
+
+    case 'history': openHistory(true); break;
+    case 'close-history': openHistory(false); break;
+    case 'load': {
+      const b2 = loadDB().find(x => x.id === id);
+      if (b2) { state = hydrate(JSON.parse(JSON.stringify(b2))); render(); openHistory(false); toast(`Cargado: ${state.meta.proyecto} ${state.meta.version}`); }
+      break;
+    }
+    case 'dup': {
+      const b2 = loadDB().find(x => x.id === id);
+      if (!b2) break;
+      const copy = hydrate(JSON.parse(JSON.stringify(b2)));
+      copy.id = uid(); copy.savedAt = null;
+      copy.meta.version = bumpVersion(copy.meta.version); copy.meta.fecha = today();
+      copy.items = copy.items.map(i => ({ ...i, id: uid() }));
+      state = copy;
+      if (saveBudget()) { render(); renderHistory(); toast(`Nueva versión creada: ${copy.meta.version}`); }
+      break;
+    }
+    case 'del-budget':
+      if (confirm('¿Eliminar este presupuesto del historial?')) { storeDB(loadDB().filter(x => x.id !== id)); renderHistory(); }
+      break;
+
+    case 'parse':
+      importPreview = parseRequirements($('#importText').value);
+      if (!importPreview.length) toast('No se detectaron ítems en el texto.');
+      renderImportPreview(); break;
+    case 'import-confirm':
+      importPreview.forEach(r => addItem(r.cat, r.name, r.qty, r.days, r.unit));
+      toast(`${importPreview.length} ítems importados`);
+      importPreview = []; $('#importText').value = ''; renderImportPreview(); render(); break;
+    case 'import-cancel': importPreview = []; renderImportPreview(); break;
+
+    case 'chat-toggle': {
+      const p = $('#chatPanel'); p.classList.toggle('hidden');
+      if (!p.classList.contains('hidden')) $('#chatInput').focus();
+      break;
+    }
+    case 'chat-settings': $('#chatSettings').classList.toggle('hidden'); break;
+    case 'ai-save':
+      localStorage.setItem(LS_AI, JSON.stringify({ key: $('#aiKey').value.trim(), model: $('#aiModel').value.trim() }));
+      updateChatMode(); $('#chatSettings').classList.add('hidden'); toast('Configuración del asistente guardada'); break;
+    case 'ai-clear': localStorage.removeItem(LS_AI); $('#aiKey').value = ''; updateChatMode(); toast('Clave eliminada'); break;
+    case 'chip': handleChat(b.dataset.text); break;
+  }
+});
+
+// Edición en vivo de inputs
+document.addEventListener('input', e => {
+  const t = e.target, d = t.dataset;
+  if (d.field) {                       // celdas de ítems
+    const it = findItem(d.id); if (!it) return;
+    if (d.field === 'name') it.name = t.value;
+    else if (d.field === 'unit' || d.field === 'real') it[d.field] = fromView(num(t.value));
+    else it[d.field] = num(t.value);
+    updateComputed();
+  } else if (d.meta) {                 // metadata
+    state.meta[d.meta] = t.value; updateComputed();
+  } else if (d.var) {                  // variables globales
+    state.vars[d.var] = d.var === 'extras' ? fromView(num(t.value)) : num(t.value);
+    updateComputed();
+  } else if (d.rate) {                 // tasas (etiqueta o valor)
+    const r = state.rates.find(x => x.id === d.rate); if (!r) return;
+    r[d.rf] = d.rf === 'value' ? num(t.value) : t.value;
+    updateComputed();
+    if (activeTab !== 'sumario') renderTab(); // los inputs en Bs/€ deben reflejar la nueva tasa
+    renderVars();
+  } else if (t.id === 'histFilter') {
+    renderHistory();
+  }
+});
+
+document.addEventListener('change', e => {
+  const d = e.target.dataset;
+  if (d.rateCur) {
+    const r = state.rates.find(x => x.id === d.rateCur); if (!r) return;
+    r.cur = e.target.value;
+    ['VES', 'EUR'].forEach(c => { if (!state.rates.some(x => x.id === state.activeRate[c] && x.cur === c)) state.activeRate[c] = state.rates.find(x => x.cur === c)?.id; });
+    render();
+  } else if (d.rateActive) {
+    const r = state.rates.find(x => x.id === d.rateActive); if (r) { state.activeRate[r.cur] = r.id; render(); }
+  } else if (d.impCat !== undefined) {
+    importPreview[+d.impCat].cat = e.target.value;
+  }
+});
+
+/* ---------------------------------------------------------------
+   14. ARRANQUE
+   --------------------------------------------------------------- */
+(function init() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_CURRENT));
+    state = saved && Array.isArray(saved.items) ? hydrate(saved) : sampleBudget();
+  } catch { state = sampleBudget(); }
+
+  // En escritorio, abrir por defecto los paneles principales de configuración
+  if (window.innerWidth >= 1024) document.querySelectorAll('[data-open-desktop]').forEach(d => d.open = true);
+
+  render();
+  initChat();
+})();
+</script>
+</body>
+</html>
