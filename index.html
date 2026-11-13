@@ -91,7 +91,18 @@
         <button class="btn-accent" data-action="save">Guardar actual</button>
         <button class="btn-ghost" data-action="new">Nuevo</button>
       </div>
-      <input id="histFilter" class="inp" placeholder="Filtrar: cliente, proyecto, cotización…" />
+      <input id="histFilter" class="inp" placeholder="Buscar: cliente, proyecto, cotización, versión…" />
+      <div class="grid grid-cols-2 gap-2">
+        <select id="histClient" class="inp !text-xs"><option value="">Todos los clientes</option></select>
+        <select id="histAgency" class="inp !text-xs"><option value="">Todas las agencias</option></select>
+      </div>
+      <select id="histSort" class="inp !text-xs">
+        <option value="recent">Más recientes primero</option>
+        <option value="old">Más antiguos primero</option>
+        <option value="high">Mayor total</option>
+        <option value="low">Menor total</option>
+        <option value="name">Proyecto (A–Z)</option>
+      </select>
     </div>
     <div id="histList" class="flex-1 overflow-y-auto scroll-thin p-3 space-y-2"></div>
   </aside>
@@ -229,30 +240,36 @@ const BASE_BUDGET = {
   vars: { markup: 15, honExtra: 10, agency: 10, extras: 0, tax: 16 },
   showDetail: true, // mostrar renglones (con monto) dentro de cada categoría del Sumario/PDF
   items: {
+    // A. PRE-PRODUCCIÓN
     preprod: [
-      'Desarrollo de guion / tratamiento', 'Storyboard', 'Scouting de locaciones', 'Casting',
-      'Fitting / prueba de vestuario', 'Reunión de pre-producción (PPM)', 'Permisos y trámites',
-      'Pruebas de cámara y maquillaje', 'Oficina de producción', 'Transporte de pre-producción',
+      'Desarrollo de guion / tratamiento', 'Storyboard', 'Moodboard / referencias', 'Scouting de locaciones',
+      'Casting', 'Fitting / prueba de vestuario', 'Reunión de pre-producción (PPM)', 'Permisos y trámites',
+      'Pruebas de cámara y maquillaje', 'Oficina de producción', 'Comunicaciones', 'Transporte de pre-producción',
     ],
+    // B. PRODUCCIÓN
     prod: [
-      'Paquete de cámara', 'Lentes y accesorios', 'Monitoreo / video assist', 'Luces', 'Grip (equipo)',
-      'Planta eléctrica', 'Dolly / grúa / steadicam', 'Drone', 'Sonido directo (equipo)', 'Locación',
-      'Estudio / set', 'Construcción de escenografía', 'Arte y utilería', 'Vestuario',
-      'Maquillaje y peinado (materiales)', 'Talentos principales', 'Talentos secundarios / extras',
-      'Catering', 'Transporte de equipo y personal', 'Hospedaje y viáticos', 'Seguridad',
-      'Seguros', 'Almacenamiento (discos / tarjetas)', 'Imprevistos de producción',
+      'Paquete de cámara', 'Lentes y accesorios', 'Cámara fotográfica (still)', 'Monitoreo / video assist',
+      'Luces', 'Grip (equipo)', 'Planta eléctrica', 'Dolly / grúa / steadicam', 'Drone',
+      'Sonido directo (equipo)', 'Locación', 'Estudio / set', 'Construcción de escenografía', 'Arte y utilería',
+      'Vestuario', 'Maquillaje y peinado (materiales)', 'Talentos principales', 'Talentos secundarios / extras',
+      'Catering', 'Transporte de equipo y personal', 'Hospedaje y viáticos', 'Seguridad', 'Seguros',
+      'Almacenamiento (discos / tarjetas)', 'Imprevistos de producción',
     ],
+    // C. HONORARIOS
     hon: [
-      'Director', 'Productor ejecutivo', 'Productor de campo', 'Jefe de producción', 'Asistente de producción',
-      'Asistente de dirección', 'Director de fotografía (DP)', 'Fotógrafo', 'Asistente de cámara / foquista',
-      'Gaffer', 'Eléctricos', 'Maquinistas (grip)', 'Director de arte', 'Utilero / ambientador',
-      'Vestuarista / estilista', 'Maquillador / peinador', 'Sonidista', 'DIT / data manager',
-      'Script / continuista', 'Making of / BTS', 'Choferes',
+      'Director', 'Productor ejecutivo', 'Productor', 'Productor de campo', 'Jefe de producción',
+      'Asistente de producción', 'Asistente de dirección', 'Director de fotografía (DP)', 'Fotógrafo',
+      'Asistente de fotografía', 'Asistente de cámara / foquista', 'Gaffer', 'Eléctricos', 'Maquinistas (grip)',
+      'Director de arte', 'Asistente de arte', 'Utilero / ambientador', 'Vestuarista / estilista',
+      'Maquillador / peinador', 'Sonidista', 'DIT / data manager', 'Script / continuista',
+      'Making of / BTS', 'Choferes',
     ],
+    // D. POST PRODUCCIÓN
     post: [
       'Edición / montaje', 'Corrección de color', 'Retoque fotográfico', 'Animación / motion graphics',
-      'VFX / composición', 'Música (licencia u original)', 'Diseño sonoro y mezcla', 'Locución',
-      'Subtitulado', 'Versiones y formatos (cutdowns)', 'Masterización y entrega', 'Respaldo final del material',
+      'VFX / composición', 'Audio: diseño sonoro y mezcla', 'Audio: música (licencia u original)',
+      'Audio: locución', 'Subtitulado', 'Versiones y formatos (cutdowns)', 'Masterización y entrega',
+      'Respaldo final del material',
     ],
   },
 };
@@ -279,10 +296,10 @@ const DEFAULT_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const DEFAULT_MODEL = 'gpt-4o-mini';
 
 const CATS = {
-  preprod: { label: 'Pre-producción',  tab: 'prepro' },
-  prod:    { label: 'Producción',      tab: 'prepro' },
-  hon:     { label: 'Honorarios',      tab: 'hon'    },
-  post:    { label: 'Post-producción', tab: 'post'   },
+  preprod: { label: 'A. Pre-producción',  tab: 'prepro' },
+  prod:    { label: 'B. Producción',      tab: 'prepro' },
+  hon:     { label: 'C. Honorarios',      tab: 'hon'    },
+  post:    { label: 'D. Post-producción', tab: 'post'   },
 };
 const CAT_ORDER = ['preprod', 'prod', 'hon', 'post'];
 const TABS = [
@@ -328,9 +345,12 @@ function parseNum(str) {
 
 /* --- Coincidencia difusa de texto contra nombres de renglones (importación y chat) --- */
 const STOP = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'e', 'o', 'u', 'para', 'con', 'por', 'en', 'al', 'a', 'un', 'una', 'unos', 'unas', 'x', 'pax', 'dia', 'dias', 'jornada', 'jornadas', 'que', 'se', 'su', 'mi']);
-const SYN = { editor: 'edicion', montajista: 'montaje', colorista: 'color', maquillaje: 'maquillador', maquilladora: 'maquillador', peinado: 'peinador', camarografo: 'camara', productora: 'productor', fotografa: 'fotografo', fotos: 'fotografo', comida: 'catering', almuerzo: 'catering', modelos: 'talentos', modelo: 'talentos', actores: 'talentos', actriz: 'talentos', actor: 'talentos', musica: 'musica', dron: 'drone' };
+const SYN = { editor: 'edicion', montajista: 'montaje', colorista: 'color', maquillaje: 'maquillador', maquilladora: 'maquillador', peinado: 'peinador', camarografo: 'camara', productora: 'productor', fotografa: 'fotografo', comida: 'catering', almuerzo: 'catering', modelos: 'talentos', modelo: 'talentos', actores: 'talentos', actriz: 'talentos', actor: 'talentos', musica: 'musica', dron: 'drone' };
 const tokens = s => norm(s).replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w.length >= 2 && !STOP.has(w)).map(w => SYN[w] || w);
-const tokEq = (a, b) => a === b || (a.length >= 5 && b.length >= 5 && a.slice(0, 5) === b.slice(0, 5));
+const stem = w => w.replace(/(es|s)$/, '');
+// Igualdad de palabras: exacta, singular/plural, o una es el inicio de la otra (≥5 letras). "productor" ≠ "produccion"
+const tokEq = (a, b) => a === b || stem(a) === stem(b) ||
+  (Math.min(a.length, b.length) >= 5 && (a.startsWith(b) || b.startsWith(a)));
 
 /** Devuelve el renglón cuyo nombre mejor coincide con el texto (o null) */
 function bestItemMatch(text, { min = 0.5, catHint = null, items = state.items } = {}) {
@@ -340,7 +360,9 @@ function bestItemMatch(text, { min = 0.5, catHint = null, items = state.items } 
     const it_t = tokens(it.name);
     if (!it_t.length) continue;
     const matched = it_t.filter(a => tt.some(b => tokEq(a, b))).length;
-    const ratio = matched / it_t.length;
+    let ratio = matched / it_t.length;
+    // La primera palabra del renglón es la clave principal ("animación" → "Animación / motion graphics")
+    if (matched && tt.some(b => tokEq(it_t[0], b))) ratio = Math.max(ratio, 0.5);
     if (ratio < min) continue;
     const score = matched * ratio + (catHint && it.cat === catHint ? 0.05 : 0);
     if (score > bestScore) { bestScore = score; best = it; }
@@ -353,7 +375,7 @@ function bestItemMatch(text, { min = 0.5, catHint = null, items = state.items } 
    ------------------------------------------------------------------------- */
 let state;                      // presupuesto activo (JSON)
 let activeTab = 'sumario';
-const ui = { onlyUsed: false, execAll: false };   // preferencias de vista (no se guardan)
+const ui = { onlyUsed: false };   // preferencias de vista (no se guardan)
 const chat = { pending: null, history: [] };
 
 function newItem(cat, name = '', qty = 1, days = 1, unit = 0) {
@@ -694,7 +716,7 @@ function RateSelect(i) {
 
 function ExecTab() {
   const c = calc(), o = execValues(), v = state.vars;
-  const show = r => ui.execAll || r.net > EPS || r.paid;
+  const show = () => true; // Ejecutable = control interno: TODO visible, incluso en 0
   const pctLbl = (l, p) => `${l}<br><span class="normal-case font-normal">(${p}%)</span>`;
 
   // Tabla A: composición del costo
@@ -703,7 +725,7 @@ function ExecTab() {
     if (!rows.length) return '';
     const cc = c.cat[k];
     return `<tr class="bg-neutral-100"><td colspan="7" class="px-3 py-1.5 text-xs font-bold uppercase tracking-wide">${CATS[k].label}</td></tr>
-      ${rows.map(r => `<tr class="border-b border-neutral-100">
+      ${rows.map(r => `<tr class="border-b border-neutral-100 ${r.net > EPS ? '' : 'text-neutral-400'}">
         <td class="px-3 py-1.5">${esc(r.item.name)}</td>
         <td class="px-3 py-1.5 text-right tabular-nums font-medium">${fmt(r.net)}</td>
         <td class="px-3 py-1.5 text-right tabular-nums text-neutral-600">${r.hon ? fmt(r.hon) : '—'}</td>
@@ -722,7 +744,7 @@ function ExecTab() {
     const rows = c.rows.filter(r => r.item.cat === k && show(r));
     if (!rows.length) return '';
     return `<tr class="bg-neutral-100"><td colspan="7" class="px-3 py-1.5 text-xs font-bold uppercase tracking-wide">${CATS[k].label}</td></tr>
-      ${rows.map(r => { const i = r.item; return `<tr class="border-b border-neutral-100">
+      ${rows.map(r => { const i = r.item; return `<tr class="border-b border-neutral-100 ${r.net > EPS || r.paid ? '' : 'text-neutral-400'}">
         <td class="px-3 py-1.5">${esc(i.name)}</td>
         <td class="px-3 py-1.5 text-right tabular-nums">${fmt(r.net)}</td>
         <td class="px-2 py-1.5"><input type="number" min="0" step="0.01" class="inp text-right" data-real-amount="${i.id}" value="${i.real.amount || ''}" placeholder="0,00"></td>
@@ -736,7 +758,7 @@ function ExecTab() {
         <td class="px-3 py-1.5 text-right" data-ej="cvar-${k}">${o['cvar-' + k]}</td></tr>`;
   }).join('');
 
-  const empty = `<tr><td colspan="7" class="py-6 text-center text-neutral-400">No hay renglones con monto. Activa "Mostrar todos" para registrar pagos no presupuestados.</td></tr>`;
+  const empty = `<tr><td colspan="7" class="py-6 text-center text-neutral-400">No hay renglones en el presupuesto.</td></tr>`;
   return `
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
       <div class="card p-3"><div class="text-[11px] uppercase text-neutral-500">Neto presupuestado</div><div class="text-lg font-bold tabular-nums" data-ej="net">${o.net}</div></div>
@@ -746,7 +768,7 @@ function ExecTab() {
         <div class="text-[10px] text-neutral-500">Facturado sin IVA <span data-ej="subtotal">${o.subtotal}</span> − costos</div></div>
     </div>
     ${c.unallocated > EPS ? `<div class="card p-3 mb-4 text-sm border-red-300 text-red-700">Hay ${fmt(c.unallocated)} en montos extras sin renglones con monto donde prorratearlos.</div>` : ''}
-    <div class="flex justify-end mb-2"><label class="flex items-center gap-2 text-xs text-neutral-600"><input type="checkbox" class="accent-[#572364]" data-ui="execAll" ${ui.execAll ? 'checked' : ''}> Mostrar todos los renglones</label></div>
+    <p class="mb-2 text-xs text-neutral-500">Control interno: se muestran todos los renglones, incluso los que están en 0 (en gris).</p>
 
     <div class="card overflow-hidden mb-4">
       <div class="px-4 py-3 border-b border-neutral-200"><h2 class="font-bold">Composición del costo</h2>
@@ -856,12 +878,34 @@ function bumpVersion(v) {
 }
 
 function HistoryList() {
-  const db = loadDB().sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
-  const f = norm($('#histFilter').value);
-  const list = db.filter(b => !f || norm(Object.values(b.meta || {}).join(' ')).includes(f));
-  $('#histCount').textContent = `${db.length} / ${MAX_BUDGETS} presupuestos`;
-  $('#histList').innerHTML = list.length ? list.map(b => {
-    const total = calc(hydrate(b)).total, cur = b.id === state.id;
+  const db = loadDB().map(b => ({ b, total: calc(hydrate(b)).total }));
+
+  // Opciones de filtro (clientes / agencias únicos), conservando la selección
+  const fillSelect = (sel, field, label) => {
+    const el = $(sel), current = el.value;
+    const vals = [...new Set(db.map(x => (x.b.meta[field] || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+    el.innerHTML = `<option value="">${label}</option>` + vals.map(v => `<option ${v === current ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  };
+  fillSelect('#histClient', 'cliente', 'Todos los clientes');
+  fillSelect('#histAgency', 'agencia', 'Todas las agencias');
+
+  // Búsqueda + filtros + orden
+  const f = norm($('#histFilter').value), fc = $('#histClient').value, fa = $('#histAgency').value;
+  const sorters = {
+    recent: (a, b) => (b.b.savedAt || '').localeCompare(a.b.savedAt || ''),
+    old:    (a, b) => (a.b.savedAt || '').localeCompare(b.b.savedAt || ''),
+    high:   (a, b) => b.total - a.total,
+    low:    (a, b) => a.total - b.total,
+    name:   (a, b) => (a.b.meta.proyecto || '').localeCompare(b.b.meta.proyecto || '', 'es'),
+  };
+  const list = db
+    .filter(({ b }) => (!f || norm(Object.values(b.meta || {}).join(' ')).includes(f))
+      && (!fc || (b.meta.cliente || '').trim() === fc) && (!fa || (b.meta.agencia || '').trim() === fa))
+    .sort(sorters[$('#histSort').value] || sorters.recent);
+
+  $('#histCount').textContent = `${db.length} / ${MAX_BUDGETS} presupuestos${list.length !== db.length ? ` · ${list.length} visibles` : ''}`;
+  $('#histList').innerHTML = list.length ? list.map(({ b, total }) => {
+    const cur = b.id === state.id;
     return `<div class="rounded-xl border ${cur ? 'border-accent ring-1 ring-accent/30' : 'border-neutral-200'} p-3">
       <div class="flex justify-between gap-2">
         <div class="min-w-0">
@@ -1003,7 +1047,8 @@ function parseLine(line, currentCat) {
 /** Modo local (sin API): coincidencia difusa contra los renglones existentes */
 function localImport(text) {
   let current = null; const map = {}, unmatched = [];
-  text.split(/\r?\n|;/).forEach(line => {
+  // Separa por líneas, punto y coma, comas seguidas de espacio (no "1,500") y la conjunción " y "
+  text.split(/\r?\n|;|,(?=\s)|\s+y\s+/).forEach(line => {
     const p = parseLine(line, current);
     if (!p) return;
     if (p.header) { current = p.header; return; }
@@ -1624,6 +1669,7 @@ document.addEventListener('change', e => {
   else if (d.realRate) { const it = findItem(d.realRate); if (it) { it.real.rateId = t.value; renderTab(); autosave(); } }
   else if (d.toggle) { state[d.toggle] = t.checked; renderTab(); autosave(); }
   else if (d.ui) { ui[d.ui] = t.checked; renderTab(); }
+  else if (['histClient', 'histAgency', 'histSort'].includes(t.id)) HistoryList();
   else if (t.id === 'pdfInput' && t.files[0]) {
     const f = t.files[0]; toast('Leyendo PDF…');
     extractPdfText(f).then(txt => {
